@@ -253,6 +253,54 @@ function ComplaintPortal({ onClose, onRegisterComplaint, initialStation = '' }) 
       onRegisterComplaint(complaintRecord);
     }
 
+    // Format exact flat schema strictly matching Zoho Catalyst Complaints table
+    const firNum = `FIR-2026-${(incidentDistrict || 'BLR').replace(/[^a-zA-Z]/g, '').slice(0, 3).toUpperCase()}-${Math.floor(100 + Math.random() * 900)}`;
+    const catalystComplaintPayload = {
+      ComplaintId: String(generatedRef),
+      FirNumber: String(firNum),
+      ComplainantName: String(fullName || 'Citizen Applicant'),
+      Mobile: String(mobileNumber || loginMobile || '9845012345'),
+      Email: String(email || ''),
+      IncidentDate: String(`${dateFrom || new Date().toISOString().split('T')[0]} ${timeFrom || '12:00'}`.trim()),
+      IncidentLocation: String(incidentLocation || selectedStation || 'Karnataka, India'),
+      Division: 'Bengaluru',
+      SubDivision: String(incidentDistrict || 'Bengaluru Urban'),
+      PoliceStation: String(selectedStation || 'Bengaluru Urban Main PS'),
+      CrimeCategory: String(natureOfComplaint || 'General Crime / Cyber Incident'),
+      ComplaintDescription: String(incidentDescription || 'Citizen complaint registered via KSP DRISHTI e-Portal.'),
+      SuspectDetails: knowSuspect === 'Yes' ? `${suspectName || 'Unknown'} (Age: ${suspectAge || 'N/A'}). ${suspectDescription || ''}`.trim() : 'Unknown Suspect',
+      EvidenceCount: String(uploadedEvidenceList.length || 1),
+      ComplaintStatus: 'REGISTERED',
+      FilingTimestamp: new Date().toISOString()
+    };
+
+    console.log('📡 Submitting e-Complaint to Catalyst DataStore:', catalystComplaintPayload);
+
+    // Submit to Catalyst Cloud Function & Local Database
+    const CATALYST_PROXY_URL = '/catalyst-api/server/submit_complaint/';
+    const CATALYST_DIRECT_URL = 'https://kspcrimeintelligenceplatform-60077159195.development.catalystserverless.in/server/submit_complaint/';
+
+    try {
+      let res = await fetch(CATALYST_PROXY_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(catalystComplaintPayload)
+      });
+      if (!res.ok) {
+        res = await fetch(CATALYST_DIRECT_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(catalystComplaintPayload)
+        });
+      }
+      if (res && res.ok) {
+        const cloudData = await res.json();
+        console.log('✅ Catalyst Complaints Table INSERT SUCCESS:', cloudData);
+      }
+    } catch (err) {
+      console.warn("Catalyst cloud e-complaint sync notice:", err);
+    }
+
     try {
       await fetch('/api/complaints', {
         method: 'POST',

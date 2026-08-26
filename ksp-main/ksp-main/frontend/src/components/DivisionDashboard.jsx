@@ -561,17 +561,17 @@ function DivisionDashboard({
 
       {panicActive && <PanicSOS onClose={() => setPanicActive(false)} />}
 
-      {/* Floating KSP Sentinel AI Assistant Trigger */}
+      {/* Floating KSP DRISHTI Assistant Trigger */}
       <button
         className="floating-chatbot-trigger"
         onClick={() => setShowChatbot(!showChatbot)}
-        title={showChatbot ? "Close KSP Sentinel AI" : "Open KSP Sentinel AI Intelligence Assistant"}
-        aria-label="KSP Sentinel AI Assistant"
+        title={showChatbot ? "Close KSP DRISHTI" : "Open KSP DRISHTI AI Assistant"}
+        aria-label="KSP DRISHTI Assistant"
       >
         {showChatbot ? <X size={26} /> : <MessageSquare size={26} />}
       </button>
 
-      {/* Full-Screen KSP Sentinel AI Modal */}
+      {/* Full-Screen KSP DRISHTI Modal */}
       {showChatbot && (
         <FullScreenChatbotModal
           initialDivision={`${divisionName} Division`}

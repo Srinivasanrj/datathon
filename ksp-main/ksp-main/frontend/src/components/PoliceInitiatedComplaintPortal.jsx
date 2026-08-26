@@ -3,9 +3,11 @@ import {
   ShieldCheck, FileText, CheckCircle2, ArrowRight, ArrowLeft, Upload, Check, Download, 
   AlertCircle, Phone, Lock, Calendar, MapPin, User, FilePlus, X, Eye, 
   Edit3, Camera, FileCheck, Paperclip, Plus, Minus, Image, Film, Smartphone, 
-  Mic, FileCode, BadgeCheck, ShieldAlert, Radio, Search, Layers, RefreshCw, Zap
+  Mic, FileCode, BadgeCheck, ShieldAlert, Radio, Search, Layers, RefreshCw, Zap, Database
 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
+import { pushPoliceCaseToCatalyst } from '../services/catalystPoliceService';
+import { getPoliceComplaints, savePoliceComplaint } from '../dataset/police_complaint_catalyst_dataset';
 
 const KARNATAKA_DISTRICTS_STATIONS = {
   'Bengaluru Urban': ['Bengaluru Urban Main PS', 'Indiranagar PS', 'Koramangala PS', 'Whitefield Cyber PS', 'Electronic City PS'],
@@ -27,16 +29,10 @@ const KARNATAKA_DISTRICTS_STATIONS = {
 /**
  * STANDALONE POLICE-INITIATED COMPLAINT / SUO MOTO FIR MODULE
  * Designed for duty officers on patrol discovering crimes, seizing evidence, and logging field cases.
- * Includes:
- * 1. Officer Badge Authentication & Patrol Station Selection
- * 2. Incident & Spot Details, Suspect/Accused Info, Witness Info
- * 3. Recovered Property / Seizure List (Panchanama)
- * 4. Multi-format Evidence Upload + Officer Field Report Upload
- * 5. AI Automated Similar / Related Case Matcher (Database Search)
- * 6. Review -> Verify -> Submit flow with unique Police Case ID generation (e.g. KSP-POL-2026-48912)
+ * Fully synchronized with Zoho Catalyst DataStore (`PoliceInitiatedComplaints`).
  */
 function PoliceInitiatedComplaintPortal({ onClose, onRegisterCase, initialStation = '' }) {
-  const [currentStep, setCurrentStep] = useState('welcome'); // welcome, step1, step2, step3, step4, step5, step6 (related cases), review, confirmation
+  const [currentStep, setCurrentStep] = useState('welcome'); // welcome, step1, step2, step3, step4, step5, step6, review, confirmation
   
   // Officer Authentication
   const [officerBadge, setOfficerBadge] = useState('KSP-88421');
@@ -60,11 +56,11 @@ function PoliceInitiatedComplaintPortal({ onClose, onRegisterCase, initialStatio
   const [suspectMarks, setSuspectMarks] = useState('');
   const [suspectAddress, setSuspectAddress] = useState('');
 
-  // Witness / Panchas
-  const [pancha1Name, setPancha1Name] = useState('');
-  const [pancha1Contact, setPancha1Contact] = useState('');
+  // Witness Details
+  const [witnessName, setWitnessName] = useState('');
+  const [witnessContact, setWitnessContact] = useState('');
 
-  // Step 4: Recovered Property / Seizure List (Panchanama)
+  // Step 4: Recovered Property / Seizure List
   const [propertySeized, setPropertySeized] = useState('Yes');
   const [seizureCategory, setSeizureCategory] = useState('Stolen Vehicle (Motorcycle)');
   const [seizureDescription, setSeizureDescription] = useState('');
@@ -74,10 +70,6 @@ function PoliceInitiatedComplaintPortal({ onClose, onRegisterCase, initialStatio
   // Step 5: Upload Files & Officer Field Report
   const [officerReportFile, setOfficerReportFile] = useState('');
   const [uploadedEvidences, setUploadedEvidences] = useState([]);
-
-  // Step 6: AI Similar Case Matches
-  const [similarCases, setSimilarCases] = useState([]);
-  const [isSearchingSimilar, setIsSearchingSimilar] = useState(false);
 
   // Review & Submit State
   const [refNumber, setRefNumber] = useState('');
@@ -101,71 +93,13 @@ function PoliceInitiatedComplaintPortal({ onClose, onRegisterCase, initialStatio
       id: Date.now() + Math.random().toString(36).substr(2, 4),
       name: f.name,
       size: (f.size / (1024 * 1024)).toFixed(2) + ' MB',
-      type: f.type || 'Media File'
+      type: f.type.includes('image') ? 'IMAGE' : f.type.includes('video') ? 'VIDEO' : f.type.includes('audio') ? 'AUDIO' : 'DOC'
     }));
     setUploadedEvidences(prev => [...prev, ...newItems]);
   };
 
-  const handleRemoveEvidence = (id) => {
+  const removeEvidence = (id) => {
     setUploadedEvidences(prev => prev.filter(item => item.id !== id));
-  };
-
-  // --- AI SIMILAR CASE SEARCH ENGINE ---
-  const handleSearchSimilarCases = () => {
-    setIsSearchingSimilar(true);
-    setCurrentStep('step6');
-
-    setTimeout(() => {
-      setIsSearchingSimilar(false);
-      // Retrieve existing complaints from localStorage / global database
-      let database = [];
-      try {
-        const raw = localStorage.getItem('ksp_registered_complaints');
-        if (raw) database = JSON.parse(raw);
-      } catch (e) {}
-      if (window.KSP_REGISTERED_COMPLAINTS) {
-        database = [...database, ...window.KSP_REGISTERED_COMPLAINTS];
-      }
-
-      // Generate intelligent match results based on current category & location
-      const mockMatches = [
-        {
-          id: 'FIR-2026-99412',
-          title: `${crimeCategory} near ${incidentDistrict}`,
-          similarity: '94% M.O. & Location Match',
-          station: selectedStation,
-          date: '2026-08-18',
-          status: 'REGISTERED / UNDER INVESTIGATION',
-          details: `Reported incident matching suspect modus operandi in sector. Vehicle chassis serial match flagged by AI.`
-        },
-        {
-          id: 'KSP-EC-2026-88102',
-          title: `Stolen Property Report — ${seizureCategory}`,
-          similarity: '87% Property Match',
-          station: 'Koramangala PS',
-          date: '2026-08-21',
-          status: 'PENDING RECOVERY',
-          details: `Matching property description (${seizureCategory}) reported by citizen applicant.`
-        }
-      ];
-
-      // Add actual DB matches if found
-      if (database.length > 0) {
-        database.slice(0, 2).forEach(c => {
-          mockMatches.push({
-            id: c.id,
-            title: `${c.incident?.nature || 'Recorded Incident'} - ${c.incident?.location || ''}`,
-            similarity: '82% Pattern Match',
-            station: c.incident?.police_station || selectedStation,
-            date: c.filing_date || 'Recent',
-            status: c.status || 'UNDER INVESTIGATION',
-            details: c.incident?.description || 'Matched case record in SCRB RAG store.'
-          });
-        });
-      }
-
-      setSimilarCases(mockMatches);
-    }, 1200);
   };
 
   // --- SUBMIT POLICE-INITIATED CASE ---
@@ -218,8 +152,8 @@ function PoliceInitiatedComplaintPortal({ onClose, onRegisterCase, initialStatio
         address: suspectAddress
       },
       witness: {
-        pancha_name: pancha1Name,
-        contact: pancha1Contact
+        witness_name: witnessName,
+        contact: witnessContact
       },
       seizure: {
         property_seized: propertySeized === 'Yes',
@@ -232,19 +166,46 @@ function PoliceInitiatedComplaintPortal({ onClose, onRegisterCase, initialStatio
         manual_report: officerReportFile || 'Logged Officer Entry',
         files: uploadedEvidences.map(e => e.name)
       },
-      similar_matches: similarCases.map(s => s.id),
       investigator: `${officerName} (${officerRank})`,
       section_laws: 'Sec 303/317 BNS, Sec 102 CrPC / Sec 105 BNSS (Seizure)'
     };
 
-    // Save to localStorage
+    // Save to localStorage & Catalyst Cloud DB
     try {
       const existingStr = localStorage.getItem('ksp_registered_complaints');
       const existing = existingStr ? JSON.parse(existingStr) : [];
       existing.unshift(caseRecord);
       localStorage.setItem('ksp_registered_complaints', JSON.stringify(existing));
+
+      // Save to Police Initiated Catalyst Dataset Engine & Sync to Cloud DB
+      await pushPoliceCaseToCatalyst({
+        CaseId: String(caseRecord.id || generatedRef),
+        FirNumber: `FIR-2026-${(incidentDistrict || 'BLR').replace(/[^a-zA-Z]/g, '').slice(0, 3).toUpperCase()}-${Math.floor(100 + Math.random() * 900)}`,
+        OfficerBadge: String(caseRecord.officer?.badge_id || officerBadge || 'KSP-88421'),
+        OfficerName: String(caseRecord.officer?.name || officerName || 'Duty Officer'),
+        OfficerRank: String(caseRecord.officer?.rank || officerRank || 'Police Inspector (PI)'),
+        Division: 'Bengaluru',
+        SubDivision: String(caseRecord.officer?.district || incidentDistrict || 'Bengaluru Urban'),
+        PoliceStation: String(caseRecord.officer?.police_station || selectedStation || 'Bengaluru Urban Main PS'),
+        BeatUnit: String(caseRecord.officer?.beat_unit || beatUnit || 'Night Patrol Beat #4'),
+        CrimeCategory: String(caseRecord.incident?.nature || crimeCategory || 'Spot Operation / Suo Moto'),
+        IncidentDate: String(`${caseRecord.incident?.date_from || incidentDate || new Date().toISOString().split('T')[0]} ${caseRecord.incident?.time_from || incidentTime || '02:00'}`.trim()),
+        SpotLocation: String(caseRecord.incident?.location || spotLocation || selectedStation || 'Karnataka, India'),
+        SpotNarrative: String(caseRecord.incident?.description || spotNarrative || 'Offense discovered during beat patrol under BNSS Sec 105.'),
+        SuspectStatus: String(caseRecord.suspect?.status || suspectStatus || 'Apprehended on Spot'),
+        SuspectName: String(caseRecord.suspect?.name || suspectName || 'Unknown Accused'),
+        SuspectDetails: String(`Age: ${caseRecord.suspect?.approx_age || suspectAge || 'N/A'}. Marks: ${caseRecord.suspect?.marks || suspectMarks || 'None'}. Address: ${caseRecord.suspect?.address || suspectAddress || 'N/A'}`),
+        SeizedItems: String(caseRecord.seizure?.description || seizureDescription || 'Spot property seizure memo logged'),
+        SeizureValue: String(caseRecord.seizure?.estimated_value || estimatedValue || 'Rs. 0'),
+        PanchaWitness: String(witnessName ? `${witnessName} (${witnessContact})` : 'Independent Spot Witness'),
+        EvidenceCount: String(caseRecord.evidence?.files?.length || uploadedEvidences?.length || 1),
+        EvidenceList: caseRecord.evidence?.files || ['Spot Seizure Memo', 'Inspection Photo'],
+        CaseStatus: 'ACCUSED_IN_CUSTODY',
+        FilingTimestamp: new Date().toISOString(),
+        InvestigationSummary: String(caseRecord.incident?.description || spotNarrative || 'Spot seizure and panchanama completed under BNSS Sec 105.')
+      });
     } catch (err) {
-      console.error("Error saving to localStorage:", err);
+      console.error("Error saving to localStorage & Catalyst dataset:", err);
     }
 
     // Attach to global window database
@@ -271,13 +232,13 @@ function PoliceInitiatedComplaintPortal({ onClose, onRegisterCase, initialStatio
     doc.rect(8, 8, 194, 280);
 
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(16);
+    doc.setFontSize(15);
     doc.setTextColor(15, 23, 42);
     doc.text('KARNATAKA STATE POLICE', 105, 20, { align: 'center' });
 
-    doc.setFontSize(11);
+    doc.setFontSize(10.5);
     doc.setTextColor(37, 99, 235);
-    doc.text('POLICE-INITIATED SUO MOTO FIR & SEIZURE MEMO (BNSS SEC 105)', 105, 26, { align: 'center' });
+    doc.text('POLICE-INITIATED COMPLAINT & SPOT SEIZURE MEMO (SUO MOTO FIR)', 105, 26, { align: 'center' });
 
     doc.setDrawColor(203, 213, 225);
     doc.setLineWidth(0.5);
@@ -286,51 +247,52 @@ function PoliceInitiatedComplaintPortal({ onClose, onRegisterCase, initialStatio
     doc.setFillColor(239, 246, 255);
     doc.rect(15, 34, 180, 24, 'F');
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(12);
+    doc.setFontSize(11);
     doc.setTextColor(30, 58, 138);
-    doc.text(`POLICE CASE REFERENCE ID: ${refNumber || 'KSP-POL-2026-48912'}`, 20, 44);
+    doc.text(`POLICE CASE ID: ${refNumber || 'KSP-POL-2026-PENDING'}`, 20, 43);
     doc.setFontSize(9);
     doc.setFont('helvetica', 'normal');
-    doc.text(`Patrol Officer: ${officerName} (${officerBadge}) | Station: ${selectedStation}`, 20, 52);
+    doc.text(`Patrol Station: ${selectedStation} (${incidentDistrict}) | Beat: ${beatUnit}`, 20, 50);
 
-    let y = 68;
+    let y = 66;
 
     const sections = [
-      ['1. INVESTIGATING OFFICER & PATROL UNIT', [
-        ['Officer Name:', officerName],
-        ['Badge ID / Rank:', `${officerBadge} | ${officerRank}`],
-        ['Police Station:', selectedStation],
-        ['Patrol Beat Unit:', beatUnit]
+      ['1. DUTY PATROL OFFICER PARTICULARS', [
+        ['Officer Name & Rank:', `${officerName} (${officerRank})`],
+        ['Officer Badge ID:', officerBadge],
+        ['Police Station / District:', `${selectedStation} (${incidentDistrict})`],
+        ['Beat Sector / Patrol Unit:', beatUnit]
       ]],
-      ['2. SPOT INCIDENT DETAILS', [
-        ['Offense Category:', crimeCategory],
-        ['Date & Time Discovered:', `${incidentDate} at ${incidentTime}`],
-        ['Spot Location:', spotLocation || 'Patrol Beat Sector 4'],
-        ['Officer Observations:', spotNarrative || 'Offense observed during routine beat patrol. Action initiated on spot.']
+      ['2. SPOT INCIDENT & OFFENSE SUMMARY', [
+        ['Nature of Crime / Category:', crimeCategory],
+        ['Incident Date & Time:', `${incidentDate} at ${incidentTime}`],
+        ['Spot / Recovery Location:', spotLocation || 'Patrol Beat Area'],
+        ['Spot Observations & Modus:', spotNarrative || 'Patrol officer observed suspicious activity and intervened.']
       ]],
-      ['3. ACCUSED / SUSPECT & WITNESS INFO', [
-        ['Custody Status:', suspectStatus],
-        ['Suspect Name:', suspectName || 'Suspect Apprehended'],
-        ['Age & Marks:', `${suspectAge || 'N/A'} | Marks: ${suspectMarks || 'None'}`],
-        ['Pancha Witness:', `${pancha1Name || 'Pancha Witness'} (${pancha1Contact || 'N/A'})`]
+      ['3. SUSPECT & ACCUSED PARTICULARS', [
+        ['Suspect Status:', suspectStatus],
+        ['Suspect Name & Approx Age:', `${suspectName || 'Unknown / Unnamed'} (${suspectAge || 'N/A'} yrs)`],
+        ['Identification Marks:', suspectMarks || 'None noted on spot'],
+        ['Suspect Address / Native:', suspectAddress || 'Not furnished']
       ]],
-      ['4. RECOVERED PROPERTY / SEIZURE MEMO (PANCHANAMA)', [
-        ['Property Seized:', propertySeized],
-        ['Seizure Category:', seizureCategory],
-        ['Item Description:', seizureDescription || 'Property seized on spot under Panchanama'],
-        ['Estimated Value:', `Rs. ${estimatedValue || '0'}`],
-        ['Seizure Memo No:', seizureMemoNo]
+      ['4. RECOVERED PROPERTY & PANCHANAMA SEIZURE (BNSS SEC 105)', [
+        ['Property Seized on Spot:', propertySeized],
+        ['Seizure Category / Item:', seizureCategory],
+        ['Property Description / Details:', seizureDescription || 'Listed in Panchanama memo'],
+        ['Estimated Property Value:', `Rs. ${estimatedValue || '0'}`],
+        ['Panchanama Memo Reference No:', seizureMemoNo || 'PAN-2026/089'],
+        ['Pancha / Independent Witness:', `${witnessName || 'Independent Witness'} (${witnessContact || 'Contact verified'})`]
       ]],
-      ['5. AI SIMILAR CASE MATCHES & AUDIT', [
-        ['Related Case Leads:', similarCases.map(s => s.id).join(', ') || 'No prior matches'],
-        ['Officer Report File:', officerReportFile || 'Logged Officer Entry'],
-        ['Evidence Attachments:', `${uploadedEvidences.length} Media File(s)`]
+      ['5. EVIDENCES & INVESTIGATION LOG', [
+        ['Officer Field Report File:', officerReportFile || 'Manual patrol log entry recorded'],
+        ['Attached Digital Evidences:', uploadedEvidences.length > 0 ? uploadedEvidences.map(e => e.name).join(', ') : 'None attached'],
+        ['Statutory Provisions:', 'BNSS Section 105 (Seizure) & Applicable BNS Penal Sections']
       ]]
     ];
 
     sections.forEach(([secTitle, fields]) => {
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(10);
+      doc.setFontSize(9.5);
       doc.setTextColor(37, 99, 235);
       doc.text(secTitle, 15, y);
       y += 6;
@@ -353,7 +315,7 @@ function PoliceInitiatedComplaintPortal({ onClose, onRegisterCase, initialStatio
     doc.setFont('helvetica', 'italic');
     doc.setFontSize(7.5);
     doc.setTextColor(100);
-    doc.text('Certified Official Police Record under BNSS Section 105 & Section 65B Evidence Act.', 15, y);
+    doc.text('Certified Official Police Record under BNSS Section 105 & Section 65B Evidence Act. Synced to Zoho Catalyst DataStore.', 15, y);
 
     doc.save(`Police_Case_Report_${refNumber || 'Receipt'}.pdf`);
   };
@@ -389,11 +351,27 @@ function PoliceInitiatedComplaintPortal({ onClose, onRegisterCase, initialStatio
               <ShieldAlert size={26} color="#60a5fa" />
             </div>
             <div>
-              <h2 style={{ fontSize: '1.15rem', fontWeight: 900, margin: 0, letterSpacing: '0.01em', lineHeight: 1.1 }}>
-                POLICE-INITIATED COMPLAINT & SUO MOTO FIR CONSOLE
-              </h2>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <h2 style={{ fontSize: '1.15rem', fontWeight: 900, margin: 0, letterSpacing: '0.01em', lineHeight: 1.1 }}>
+                  POLICE-INITIATED COMPLAINT & SUO MOTO FIR CONSOLE
+                </h2>
+                <span style={{
+                  background: 'linear-gradient(135deg, #059669, #10b981)',
+                  color: '#ffffff',
+                  fontSize: '0.62rem',
+                  fontWeight: 800,
+                  padding: '2px 8px',
+                  borderRadius: '20px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px'
+                }}>
+                  <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#a7f3d0' }} />
+                  ZOHO CATALYST DATASTORE
+                </span>
+              </div>
               <p style={{ fontSize: '0.72rem', color: '#bfdbfe', margin: 0, fontWeight: 600 }}>
-                Karnataka State Police • Duty Patrol Offense Registration & AI Case Matcher
+                Karnataka State Police • Duty Patrol Offense Registration & Automated DataStore Sync
               </p>
             </div>
           </div>
@@ -415,11 +393,10 @@ function PoliceInitiatedComplaintPortal({ onClose, onRegisterCase, initialStatio
               { id: 'step3', label: '3. Accused/Witness' },
               { id: 'step4', label: '4. Property Seizure' },
               { id: 'step5', label: '5. Evidence & Report' },
-              { id: 'step6', label: '6. AI Case Match' },
-              { id: 'review', label: '7. Review & Submit' }
+              { id: 'review', label: '6. Review & Submit' }
             ].map((s, i) => {
               const active = currentStep === s.id;
-              const stepOrder = ['step1', 'step2', 'step3', 'step4', 'step5', 'step6', 'review'];
+              const stepOrder = ['step1', 'step2', 'step3', 'step4', 'step5', 'review'];
               const currentNum = stepOrder.indexOf(currentStep) + 1;
               const thisNum = i + 1;
               const completed = thisNum < currentNum;
@@ -435,12 +412,12 @@ function PoliceInitiatedComplaintPortal({ onClose, onRegisterCase, initialStatio
                   }}
                 >
                   <div style={{
-                    width: '22px', height: '22px', borderRadius: '50%',
-                    background: active ? '#2563eb' : (completed ? '#059669' : '#cbd5e1'),
-                    color: active || completed ? 'white' : '#475569',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.68rem', fontWeight: 800
+                    width: '24px', height: '24px', borderRadius: '50%',
+                    background: active ? '#1d4ed8' : (completed ? '#059669' : '#cbd5e1'),
+                    color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: '0.72rem', fontWeight: 800
                   }}>
-                    {completed ? <Check size={12} /> : thisNum}
+                    {completed ? <Check size={14} /> : thisNum}
                   </div>
                   <span>{s.label}</span>
                 </button>
@@ -449,112 +426,109 @@ function PoliceInitiatedComplaintPortal({ onClose, onRegisterCase, initialStatio
           </div>
         )}
 
-        {/* MAIN BODY CONTAINER */}
+        {/* BODY CONTAINER */}
         <div style={{ padding: '24px', overflowY: 'auto', flex: 1, zIndex: 1 }}>
 
-          {/* WELCOME / ENTRY SCREEN */}
+          {/* WELCOME SCREEN */}
           {currentStep === 'welcome' && (
-            <div style={{ textAlign: 'center', padding: '20px 10px' }}>
-              <div style={{ background: 'linear-gradient(135deg, #0f172a, #1e3a8a)', color: 'white', width: '68px', height: '68px', borderRadius: '22px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px', boxShadow: '0 10px 25px rgba(15,23,42,0.3)' }}>
-                <Radio size={36} color="#60a5fa" />
+            <div style={{ textAlign: 'center', padding: '16px 8px', maxWidth: '700px', margin: '0 auto' }}>
+              <div style={{
+                background: 'linear-gradient(135deg, #1e3a8a 0%, #1d4ed8 100%)', color: 'white',
+                width: '64px', height: '64px', borderRadius: '20px', display: 'inline-flex',
+                alignItems: 'center', justifyContent: 'center', marginBottom: '16px', boxShadow: '0 10px 25px rgba(29, 78, 216, 0.3)'
+              }}>
+                <Radio size={34} color="#93c5fd" />
               </div>
-              <h3 style={{ fontSize: '1.5rem', fontWeight: 900, color: '#1e3a8a', marginBottom: '8px' }}>
-                Police-Initiated Suo Moto FIR Console
+              <h3 style={{ fontSize: '1.45rem', fontWeight: 900, color: '#03214c', marginBottom: '8px' }}>
+                Duty Patrol Suo Moto FIR & Spot Crime Logging Console
               </h3>
-              <p style={{ fontSize: '0.85rem', color: '#475569', maxWidth: '600px', margin: '0 auto 24px auto', lineHeight: 1.5 }}>
-                Log criminal offenses discovered during beat patrol, spot seizures, raids, or routine checks. Automatically matches related cases and generates official Suo Moto case files.
+              <p style={{ fontSize: '0.86rem', color: '#475569', lineHeight: 1.6, marginBottom: '24px' }}>
+                This portal allows on-duty police officers and patrol units to register <b>Suo Moto Crimes</b>, log spot property seizures (Panchanama under BNSS Sec 105), attach photographic evidence, and automatically sync records to the <b>Zoho Catalyst Cloud DataStore</b>.
               </p>
 
-              {/* OFFICER BADGE CARD */}
-              <div style={{ background: '#ffffff', padding: '24px', borderRadius: '20px', border: '1.5px solid #bfdbfe', maxWidth: '460px', margin: '0 auto', textAlign: 'left', boxShadow: '0 8px 24px rgba(30,58,138,0.08)' }}>
-                <div style={{ fontSize: '0.88rem', fontWeight: 800, color: '#1e3a8a', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <BadgeCheck size={18} style={{ color: '#2563eb' }} /> Officer Duty Authentication
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '14px', marginBottom: '28px', textAlign: 'left' }}>
+                <div style={featureBoxStyle}>
+                  <div style={{ ...featureIconCircle, background: '#eff6ff', color: '#1d4ed8' }}><BadgeCheck size={18} /></div>
+                  <h4 style={featureTitleStyle}>Officer Authentication</h4>
+                  <p style={featureDescStyle}>Badge number, rank, police station jurisdiction, and patrol beat sector verification.</p>
                 </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px', marginBottom: '16px' }}>
-                  <div>
-                    <label style={labelStyle}>Officer Name:*</label>
-                    <input type="text" value={officerName} onChange={e => setOfficerName(e.target.value)} style={lightInputStyle} />
-                  </div>
-                  <div>
-                    <label style={labelStyle}>Badge / KGID No:*</label>
-                    <input type="text" value={officerBadge} onChange={e => setOfficerBadge(e.target.value)} style={lightInputStyle} />
-                  </div>
-                  <div>
-                    <label style={labelStyle}>Rank / Designation:*</label>
-                    <select value={officerRank} onChange={e => setOfficerRank(e.target.value)} style={lightInputStyle}>
-                      <option value="Police Inspector (PI)">Police Inspector (PI)</option>
-                      <option value="Police Sub-Inspector (PSI)">Police Sub-Inspector (PSI)</option>
-                      <option value="Assistant Sub-Inspector (ASI)">Assistant Sub-Inspector (ASI)</option>
-                      <option value="Head Constable (HC)">Head Constable (HC)</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label style={labelStyle}>District:*</label>
-                    <select value={incidentDistrict} onChange={e => handleDistrictChange(e.target.value)} style={lightInputStyle}>
-                      {Object.keys(KARNATAKA_DISTRICTS_STATIONS).map(d => (
-                        <option key={d} value={d}>{d}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div style={{ gridColumn: 'span 2' }}>
-                    <label style={labelStyle}>Assigned Police Station:*</label>
-                    <select value={selectedStation} onChange={e => setSelectedStation(e.target.value)} style={lightInputStyle}>
-                      {(KARNATAKA_DISTRICTS_STATIONS[incidentDistrict] || ['Main Police Station']).map(ps => (
-                        <option key={ps} value={ps}>{ps}</option>
-                      ))}
-                    </select>
-                  </div>
+                <div style={featureBoxStyle}>
+                  <div style={{ ...featureIconCircle, background: '#ecfdf5', color: '#059669' }}><FileCheck size={18} /></div>
+                  <h4 style={featureTitleStyle}>Spot Seizure Panchanama</h4>
+                  <p style={featureDescStyle}>Detailed property description, chassis/serial numbers, pancha witness signatures, and estimated valuation.</p>
                 </div>
-
-                <button
-                  onClick={() => setCurrentStep('step1')}
-                  style={{ width: '100%', background: 'linear-gradient(90deg, #1e3a8a, #2563eb)', color: 'white', border: 'none', padding: '12px', borderRadius: '12px', fontWeight: 800, fontSize: '0.9rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', boxShadow: '0 4px 16px rgba(37,99,235,0.3)' }}
-                >
-                  <span>Authenticate & Open Suo Moto Entry Form</span>
-                  <ArrowRight size={16} />
-                </button>
+                <div style={featureBoxStyle}>
+                  <div style={{ ...featureIconCircle, background: '#fef3c7', color: '#d97706' }}><Zap size={18} /></div>
+                  <h4 style={featureTitleStyle}>Catalyst DataStore Sync</h4>
+                  <p style={featureDescStyle}>Instant row insertion to cloud database with offline resilient state and instant PDF memo generation.</p>
+                </div>
               </div>
+
+              <button
+                onClick={() => setCurrentStep('step1')}
+                style={{
+                  background: 'linear-gradient(90deg, #1e3a8a 0%, #1d4ed8 100%)',
+                  color: 'white', border: 'none', padding: '14px 32px', borderRadius: '12px',
+                  fontWeight: 800, fontSize: '0.95rem', cursor: 'pointer', display: 'inline-flex',
+                  alignItems: 'center', gap: '10px', boxShadow: '0 8px 24px rgba(29, 78, 216, 0.35)'
+                }}
+              >
+                <span>Initiate Patrol Crime Record</span>
+                <ArrowRight size={18} />
+              </button>
             </div>
           )}
 
-          {/* STEP 1: OFFICER & PATROL DETAILS */}
+          {/* STEP 1: OFFICER PARTICULARS */}
           {currentStep === 'step1' && (
             <div style={stepCardStyle}>
-              <h4 style={stepTitleStyle}>
-                <BadgeCheck size={18} style={{ color: '#2563eb' }} /> Step 1: Officer & Patrol Unit Information
-              </h4>
+              <h4 style={stepTitleStyle}><User size={18} style={{ color: '#1d4ed8' }} /> Step 1: Duty Officer & Patrol Jurisdiction</h4>
+              <p style={stepDescStyle}>Enter duty officer identification, assigned police station, and active patrol beat sector.</p>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '14px', marginBottom: '16px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px', marginBottom: '20px' }}>
                 <div>
-                  <label style={labelStyle}>Reporting Officer Name:*</label>
-                  <input type="text" value={officerName} onChange={e => setOfficerName(e.target.value)} style={lightInputStyle} />
+                  <label style={labelStyle}>Officer Badge ID / KGID:*</label>
+                  <input type="text" value={officerBadge} onChange={e => setOfficerBadge(e.target.value)} style={lightInputStyle} placeholder="e.g. KSP-88421" />
                 </div>
                 <div>
-                  <label style={labelStyle}>Badge / KGID ID:*</label>
-                  <input type="text" value={officerBadge} onChange={e => setOfficerBadge(e.target.value)} style={lightInputStyle} />
+                  <label style={labelStyle}>Officer Full Name:*</label>
+                  <input type="text" value={officerName} onChange={e => setOfficerName(e.target.value)} style={lightInputStyle} placeholder="e.g. Inspector M. Venkatesh" />
                 </div>
                 <div>
-                  <label style={labelStyle}>Rank / Designation:*</label>
-                  <input type="text" value={officerRank} onChange={e => setOfficerRank(e.target.value)} style={lightInputStyle} />
+                  <label style={labelStyle}>Officer Rank / Designation:*</label>
+                  <select value={officerRank} onChange={e => setOfficerRank(e.target.value)} style={lightInputStyle}>
+                    <option value="Police Sub-Inspector (PSI)">Police Sub-Inspector (PSI)</option>
+                    <option value="Police Inspector (PI)">Police Inspector (PI)</option>
+                    <option value="Assistant Sub-Inspector (ASI)">Assistant Sub-Inspector (ASI)</option>
+                    <option value="Head Constable (HC)">Head Constable (HC)</option>
+                    <option value="Deputy Superintendent of Police (DySP)">Deputy Superintendent of Police (DySP)</option>
+                  </select>
                 </div>
                 <div>
-                  <label style={labelStyle}>Beat Patrol Unit / Sector:*</label>
-                  <input type="text" value={beatUnit} onChange={e => setBeatUnit(e.target.value)} style={lightInputStyle} />
-                </div>
-                <div>
-                  <label style={labelStyle}>District:*</label>
-                  <input type="text" value={incidentDistrict} readOnly style={{ ...lightInputStyle, background: '#e2e8f0' }} />
+                  <label style={labelStyle}>Patrol District:*</label>
+                  <select value={incidentDistrict} onChange={e => handleDistrictChange(e.target.value)} style={lightInputStyle}>
+                    {Object.keys(KARNATAKA_DISTRICTS_STATIONS).map(d => (
+                      <option key={d} value={d}>{d}</option>
+                    ))}
+                  </select>
                 </div>
                 <div>
                   <label style={labelStyle}>Assigned Police Station:*</label>
-                  <input type="text" value={selectedStation} readOnly style={{ ...lightInputStyle, background: '#e2e8f0' }} />
+                  <select value={selectedStation} onChange={e => setSelectedStation(e.target.value)} style={lightInputStyle}>
+                    {(KARNATAKA_DISTRICTS_STATIONS[incidentDistrict] || ['Main Police Station']).map(ps => (
+                      <option key={ps} value={ps}>{ps}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label style={labelStyle}>Beat Sector / Patrol Unit:*</label>
+                  <input type="text" value={beatUnit} onChange={e => setBeatUnit(e.target.value)} style={lightInputStyle} placeholder="e.g. Night Patrol Beat #4" />
                 </div>
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '20px' }}>
                 <button onClick={() => setCurrentStep('step2')} style={btnPrimaryLight}>
-                  <span>Proceed to Spot Incident Details</span>
+                  <span>Proceed to Spot Details</span>
                   <ArrowRight size={16} />
                 </button>
               </div>
@@ -564,160 +538,150 @@ function PoliceInitiatedComplaintPortal({ onClose, onRegisterCase, initialStatio
           {/* STEP 2: SPOT INCIDENT DETAILS */}
           {currentStep === 'step2' && (
             <div style={stepCardStyle}>
-              <h4 style={stepTitleStyle}>
-                <MapPin size={18} style={{ color: '#2563eb' }} /> Step 2: Spot Incident & Patrol Discovery Details
-              </h4>
+              <h4 style={stepTitleStyle}><MapPin size={18} style={{ color: '#1d4ed8' }} /> Step 2: Spot Incident & Offense Details</h4>
+              <p style={stepDescStyle}>Record the nature of the crime observed on patrol, exact spot location, and chronological narrative.</p>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '14px', marginBottom: '16px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px', marginBottom: '20px' }}>
                 <div style={{ gridColumn: 'span 2' }}>
-                  <label style={labelStyle}>Offense Category / Discovered Incident:*</label>
+                  <label style={labelStyle}>Nature of Crime / Category:*</label>
                   <select value={crimeCategory} onChange={e => setCrimeCategory(e.target.value)} style={lightInputStyle}>
                     <option value="Vehicle Theft / Spot Recovery">Vehicle Theft / Spot Recovery</option>
-                    <option value="Illegal Narcotics / Contraband Possession">Illegal Narcotics / Contraband Possession</option>
-                    <option value="Illegal Arms / Ammunition Seizure">Illegal Arms / Ammunition Seizure</option>
-                    <option value="Extortion / Spot Robbery in Progress">Extortion / Spot Robbery in Progress</option>
-                    <option value="Illegal Gambling Raid">Illegal Gambling Raid</option>
-                    <option value="Physical Assault / Public Brawl">Physical Assault / Public Brawl</option>
-                    <option value="Cyber Scam Hub Raid">Cyber Scam Hub Raid</option>
-                    <option value="Liquor Bootlegging / Excise Violation">Liquor Bootlegging / Excise Violation</option>
-                    <option value="Other Suo Moto Patrol Offense">Other Suo Moto Patrol Offense</option>
+                    <option value="Illegal Arms & Weapon Seizure">Illegal Arms & Weapon Seizure (Arms Act)</option>
+                    <option value="Narcotics / NDPS Substance Confiscation">Narcotics / NDPS Substance Confiscation</option>
+                    <option value="Gambling / Matka Den Raid">Gambling / Matka Den Raid</option>
+                    <option value="Bootlegging / Illicit Liquor Confiscation">Bootlegging / Illicit Liquor Confiscation</option>
+                    <option value="Street Robbery / Snatching in Progress">Street Robbery / Snatching in Progress</option>
+                    <option value="Assault / Public Affray">Assault / Public Affray</option>
+                    <option value="Illegal Sand Mining / Mineral Seizure">Illegal Sand Mining / Mineral Seizure</option>
+                    <option value="Other Spot Patrol Offense">Other Spot Patrol Offense</option>
                   </select>
                 </div>
 
                 <div>
-                  <label style={labelStyle}>Discovery Date:*</label>
+                  <label style={labelStyle}>Date of Spot Discovery:*</label>
                   <input type="date" value={incidentDate} onChange={e => setIncidentDate(e.target.value)} style={lightInputStyle} />
                 </div>
-
                 <div>
-                  <label style={labelStyle}>Discovery Time:*</label>
+                  <label style={labelStyle}>Time of Spot Discovery:*</label>
                   <input type="time" value={incidentTime} onChange={e => setIncidentTime(e.target.value)} style={lightInputStyle} />
                 </div>
 
                 <div style={{ gridColumn: 'span 2' }}>
-                  <label style={labelStyle}>Exact Spot Location / GPS Landmark:*</label>
-                  <input type="text" placeholder="e.g. Near Outer Ring Road Junction, Beat Spot #4, Bengaluru" value={spotLocation} onChange={e => setSpotLocation(e.target.value)} style={lightInputStyle} />
+                  <label style={labelStyle}>Exact Spot Location / Landmark:*</label>
+                  <input type="text" placeholder="e.g. Near 100ft Road Junction, Opposite Bus Stop, Koramangala 4th Block" value={spotLocation} onChange={e => setSpotLocation(e.target.value)} style={lightInputStyle} />
                 </div>
 
                 <div style={{ gridColumn: 'span 2' }}>
-                  <label style={labelStyle}>Officer's Spot Observations & Narrative:*</label>
-                  <textarea rows={4} placeholder="Describe how the offense was spotted on patrol, officer actions taken, scene conditions..." value={spotNarrative} onChange={e => setSpotNarrative(e.target.value)} style={lightInputStyle} />
+                  <label style={labelStyle}>Chronological Spot Narrative & Modus Operandi:*</label>
+                  <textarea rows={4} placeholder="Describe the patrol observation, suspect behavior, pursuit, spot apprehension, and factual sequence..." value={spotNarrative} onChange={e => setSpotNarrative(e.target.value)} style={lightInputStyle} />
                 </div>
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '20px' }}>
                 <button onClick={() => setCurrentStep('step1')} style={btnSecondaryLight}><ArrowLeft size={16} /> Back</button>
                 <button onClick={() => setCurrentStep('step3')} style={btnPrimaryLight}>
-                  <span>Proceed to Accused & Witness Details</span>
+                  <span>Proceed to Accused Info</span>
                   <ArrowRight size={16} />
                 </button>
               </div>
             </div>
           )}
 
-          {/* STEP 3: ACCUSED / SUSPECT & WITNESS DETAILS */}
+          {/* STEP 3: ACCUSED / SUSPECT & WITNESS */}
           {currentStep === 'step3' && (
             <div style={stepCardStyle}>
-              <h4 style={stepTitleStyle}>
-                <User size={18} style={{ color: '#2563eb' }} /> Step 3: Person / Accused Details & Panchas
-              </h4>
+              <h4 style={stepTitleStyle}><User size={18} style={{ color: '#1d4ed8' }} /> Step 3: Accused / Suspect & Independent Witness Particulars</h4>
+              <p style={stepDescStyle}>Enter details of suspects apprehended or identified on spot, plus independent pancha witness details.</p>
 
-              <div style={{ marginBottom: '18px', padding: '14px', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                <label style={{ ...labelStyle, fontSize: '0.82rem', color: '#1e3a8a', marginBottom: '8px' }}>Custody / Suspect Status:</label>
-                <select value={suspectStatus} onChange={e => setSuspectStatus(e.target.value)} style={{ ...lightInputStyle, marginBottom: '12px' }}>
-                  <option value="Apprehended on Spot">Apprehended on Spot (In Police Custody)</option>
-                  <option value="Escaped / Fled Scene">Escaped / Fled Scene (Under Pursuit)</option>
-                  <option value="Questioned & Detained">Questioned & Detained</option>
-                  <option value="Unknown Offender">Unknown Offender</option>
-                </select>
-
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
-                  <div>
-                    <label style={labelStyle}>Accused Name / Alias:</label>
-                    <input type="text" placeholder="e.g. Manikandan alias 'Chotta'" value={suspectName} onChange={e => setSuspectName(e.target.value)} style={lightInputStyle} />
-                  </div>
-                  <div>
-                    <label style={labelStyle}>Approximate Age:</label>
-                    <input type="text" placeholder="e.g. 28 years" value={suspectAge} onChange={e => setSuspectAge(e.target.value)} style={lightInputStyle} />
-                  </div>
-                  <div style={{ gridColumn: 'span 2' }}>
-                    <label style={labelStyle}>Physical Identification Marks / Tattoos / Outfit:</label>
-                    <input type="text" placeholder="e.g. Tattoo on right forearm, black jacket..." value={suspectMarks} onChange={e => setSuspectMarks(e.target.value)} style={lightInputStyle} />
-                  </div>
-                  <div style={{ gridColumn: 'span 2' }}>
-                    <label style={labelStyle}>Accused Address / Native Place:</label>
-                    <input type="text" placeholder="Address..." value={suspectAddress} onChange={e => setSuspectAddress(e.target.value)} style={lightInputStyle} />
-                  </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px', marginBottom: '20px' }}>
+                <div>
+                  <label style={labelStyle}>Suspect Status:*</label>
+                  <select value={suspectStatus} onChange={e => setSuspectStatus(e.target.value)} style={lightInputStyle}>
+                    <option value="Apprehended on Spot">Apprehended on Spot (In Custody)</option>
+                    <option value="Fled the Scene (Identified)">Fled the Scene (Identified / Wanted)</option>
+                    <option value="Detained for Questioning">Detained for Questioning</option>
+                    <option value="Unknown Accused / Unidentified">Unknown Accused / Unidentified</option>
+                  </select>
                 </div>
-              </div>
+                <div>
+                  <label style={labelStyle}>Suspect Full Name / Alias:</label>
+                  <input type="text" placeholder="e.g. Imran Pasha alias 'Chotta'" value={suspectName} onChange={e => setSuspectName(e.target.value)} style={lightInputStyle} />
+                </div>
+                <div>
+                  <label style={labelStyle}>Approximate Age:</label>
+                  <input type="text" placeholder="e.g. 24 yrs" value={suspectAge} onChange={e => setSuspectAge(e.target.value)} style={lightInputStyle} />
+                </div>
+                <div>
+                  <label style={labelStyle}>Physical Marks / Tattoos / Height:</label>
+                  <input type="text" placeholder="e.g. 5ft 8in, scar on left eyebrow" value={suspectMarks} onChange={e => setSuspectMarks(e.target.value)} style={lightInputStyle} />
+                </div>
+                <div style={{ gridColumn: 'span 2' }}>
+                  <label style={labelStyle}>Suspect Known Address / Native Place:</label>
+                  <input type="text" placeholder="e.g. Goripalya, Bengaluru Urban" value={suspectAddress} onChange={e => setSuspectAddress(e.target.value)} style={lightInputStyle} />
+                </div>
 
-              {/* PANCHA / WITNESS INFO */}
-              <div style={{ padding: '14px', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                <div style={{ fontSize: '0.82rem', fontWeight: 800, color: '#1e3a8a', marginBottom: '8px' }}>Eyewitness / Spot Pancha Details:</div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
-                  <div>
-                    <label style={labelStyle}>Pancha / Witness #1 Name:</label>
-                    <input type="text" placeholder="Full Name" value={pancha1Name} onChange={e => setPancha1Name(e.target.value)} style={lightInputStyle} />
-                  </div>
-                  <div>
-                    <label style={labelStyle}>Pancha Mobile Contact:</label>
-                    <input type="text" placeholder="e.g. 9844011223" value={pancha1Contact} onChange={e => setPancha1Contact(e.target.value)} style={lightInputStyle} />
-                  </div>
+                <div style={{ gridColumn: 'span 2', borderTop: '1px solid #e2e8f0', paddingTop: '14px', marginTop: '6px' }}>
+                  <h5 style={{ fontSize: '0.85rem', fontWeight: 800, color: '#1e3a8a', marginBottom: '10px' }}>Independent Pancha / Spot Witness Details</h5>
+                </div>
+                <div>
+                  <label style={labelStyle}>Pancha Witness Name:*</label>
+                  <input type="text" placeholder="e.g. Santhosh M. (Security Guard)" value={witnessName} onChange={e => setWitnessName(e.target.value)} style={lightInputStyle} />
+                </div>
+                <div>
+                  <label style={labelStyle}>Witness Mobile / Contact No:*</label>
+                  <input type="text" placeholder="e.g. 9845012345" value={witnessContact} onChange={e => setWitnessContact(e.target.value)} style={lightInputStyle} />
                 </div>
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '20px' }}>
                 <button onClick={() => setCurrentStep('step2')} style={btnSecondaryLight}><ArrowLeft size={16} /> Back</button>
                 <button onClick={() => setCurrentStep('step4')} style={btnPrimaryLight}>
-                  <span>Proceed to Property Seizure (Panchanama)</span>
+                  <span>Proceed to Seizure Panchanama</span>
                   <ArrowRight size={16} />
                 </button>
               </div>
             </div>
           )}
 
-          {/* STEP 4: RECOVERED PROPERTY / SEIZURE LIST (PANCHANAMA) */}
+          {/* STEP 4: RECOVERED PROPERTY & SEIZURE PANCHANAMA */}
           {currentStep === 'step4' && (
             <div style={stepCardStyle}>
-              <h4 style={stepTitleStyle}>
-                <Layers size={18} style={{ color: '#2563eb' }} /> Step 4: Recovered Property & Seizure List (Panchanama)
-              </h4>
+              <h4 style={stepTitleStyle}><FileCheck size={18} style={{ color: '#1d4ed8' }} /> Step 4: Recovered Property & Spot Seizure Panchanama (BNSS Sec 105)</h4>
+              <p style={stepDescStyle}>Log items seized on the spot under seizure memo with chassis/serial details and estimated valuation.</p>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '14px', marginBottom: '16px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px', marginBottom: '20px' }}>
                 <div>
-                  <label style={labelStyle}>Property Seized on Spot?</label>
+                  <label style={labelStyle}>Was Property / Contraband Seized on Spot?:*</label>
                   <select value={propertySeized} onChange={e => setPropertySeized(e.target.value)} style={lightInputStyle}>
-                    <option value="Yes">Yes, Property / Contraband Seized</option>
-                    <option value="No">No Property Seized</option>
+                    <option value="Yes">Yes — Property Seized under Panchanama</option>
+                    <option value="No">No — No Physical Property Recovered</option>
                   </select>
                 </div>
-
                 <div>
-                  <label style={labelStyle}>Seizure Category:*</label>
+                  <label style={labelStyle}>Property Category:*</label>
                   <select value={seizureCategory} onChange={e => setSeizureCategory(e.target.value)} style={lightInputStyle}>
-                    <option value="Stolen Vehicle (Motorcycle)">Stolen Vehicle (Motorcycle)</option>
-                    <option value="Stolen Vehicle (Car/Auto)">Stolen Vehicle (Car/Auto)</option>
-                    <option value="Illegal Narcotics / Ganja / Drugs">Illegal Narcotics / Ganja / Drugs</option>
-                    <option value="Illegal Firearms / Weapons">Illegal Firearms / Weapons</option>
+                    <option value="Stolen Vehicle (Motorcycle / Car)">Stolen Vehicle (Motorcycle / Car)</option>
+                    <option value="Firearm / Lethal Weapon / Knife">Firearm / Lethal Weapon / Knife</option>
+                    <option value="Narcotic Drugs (Ganja, MDMA, Heroin)">Narcotic Drugs (Ganja, MDMA, Heroin)</option>
                     <option value="Cash / Currency Notes">Cash / Currency Notes</option>
-                    <option value="Mobile Phones / SIM Cards">Mobile Phones / SIM Cards</option>
-                    <option value="Gambling Equipment / Cash">Gambling Equipment / Cash</option>
+                    <option value="Gold / Jewelry">Gold / Jewelry</option>
+                    <option value="Electronic Equipment / Mobile Phones">Electronic Equipment / Mobile Phones</option>
                     <option value="Other Seized Property">Other Seized Property</option>
                   </select>
                 </div>
 
                 <div style={{ gridColumn: 'span 2' }}>
                   <label style={labelStyle}>Property Description / Chassis No / Make & Model:*</label>
-                  <textarea rows={2} placeholder="e.g. Pulsar 220 Bike KA-01-EF-9981, engine serial, color..." value={seizureDescription} onChange={e => setSeizureDescription(e.target.value)} style={lightInputStyle} />
+                  <textarea rows={2} placeholder="e.g. 1 KTM Duke Motorcycle (Engine No: KA-01-ET-4491), 1 Master Lock-picking tool set..." value={seizureDescription} onChange={e => setSeizureDescription(e.target.value)} style={lightInputStyle} />
                 </div>
 
                 <div>
                   <label style={labelStyle}>Estimated Seizure Value (Rs.):</label>
-                  <input type="text" placeholder="e.g. 95,000" value={estimatedValue} onChange={e => setEstimatedValue(e.target.value)} style={lightInputStyle} />
+                  <input type="text" placeholder="e.g. 2,10,000" value={estimatedValue} onChange={e => setEstimatedValue(e.target.value)} style={lightInputStyle} />
                 </div>
 
                 <div>
-                  <label style={labelStyle}>Seizure Memo / Panchanama Reference No:*</label>
+                  <label style={labelStyle}>Seizure Memo / Reference No:*</label>
                   <input type="text" value={seizureMemoNo} onChange={e => setSeizureMemoNo(e.target.value)} style={lightInputStyle} />
                 </div>
               </div>
@@ -725,242 +689,151 @@ function PoliceInitiatedComplaintPortal({ onClose, onRegisterCase, initialStatio
               <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '20px' }}>
                 <button onClick={() => setCurrentStep('step3')} style={btnSecondaryLight}><ArrowLeft size={16} /> Back</button>
                 <button onClick={() => setCurrentStep('step5')} style={btnPrimaryLight}>
-                  <span>Proceed to Evidence & Report Upload</span>
+                  <span>Proceed to Evidences & Reports</span>
                   <ArrowRight size={16} />
                 </button>
               </div>
             </div>
           )}
 
-          {/* STEP 5: EVIDENCE & OFFICER'S MANUAL REPORT UPLOAD */}
+          {/* STEP 5: EVIDENCE & OFFICER REPORT UPLOAD */}
           {currentStep === 'step5' && (
             <div style={stepCardStyle}>
-              <h4 style={stepTitleStyle}>
-                <Upload size={18} style={{ color: '#2563eb' }} /> Step 5: Upload Evidence & Officer Field Report
-              </h4>
+              <h4 style={stepTitleStyle}><Upload size={18} style={{ color: '#1d4ed8' }} /> Step 5: Upload Field Reports & Photographic Evidences</h4>
+              <p style={stepDescStyle}>Upload scanned officer patrol notebook report, panchanama signatures, and photos/videos of seized property.</p>
 
-              {/* OFFICER MANUAL FIELD REPORT UPLOAD */}
-              <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '16px', padding: '18px', marginBottom: '20px' }}>
-                <div style={{ fontSize: '0.88rem', fontWeight: 800, color: '#1e3a8a', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <FileText size={18} style={{ color: '#2563eb' }} /> Upload Officer's Manual Field Report / Daily Diary Scan
-                </div>
-                <p style={{ fontSize: '0.74rem', color: '#475569', margin: '0 0 12px 0' }}>
-                  Upload a scanned copy or photo of the officer's handwritten notebook entry, Daily Diary memo, or signed Panchanama sheet.
-                </p>
-
-                <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                  <label style={{ background: '#2563eb', color: 'white', border: 'none', padding: '9px 16px', borderRadius: '10px', fontSize: '0.78rem', fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <Upload size={14} /> Upload Officer Report File
-                    <input type="file" accept="image/*,.pdf" onChange={handleOfficerReportUpload} style={{ display: 'none' }} />
-                  </label>
-
-                  {officerReportFile ? (
-                    <div style={{ fontSize: '0.78rem', color: '#059669', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px', background: '#ecfdf5', padding: '6px 12px', borderRadius: '8px', border: '1px solid #a7f3d0' }}>
-                      <FileCheck size={16} /> Attached: {officerReportFile}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px', marginBottom: '20px' }}>
+                <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #cbd5e1' }}>
+                  <label style={labelStyle}>1. Officer Patrol Report / Written Complaint Document:*</label>
+                  <p style={{ fontSize: '0.7rem', color: '#64748b', margin: '4px 0 8px 0' }}>Upload the signed officer field statement or FIR draft.</p>
+                  <input type="file" onChange={handleOfficerReportUpload} style={{ fontSize: '0.76rem' }} />
+                  {officerReportFile && (
+                    <div style={{ fontSize: '0.74rem', color: '#059669', fontWeight: 700, marginTop: '6px' }}>
+                      ✓ Attached: {officerReportFile}
                     </div>
-                  ) : (
-                    <span style={{ fontSize: '0.72rem', color: '#64748b' }}>No officer report file uploaded</span>
                   )}
                 </div>
+
+                <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #cbd5e1' }}>
+                  <label style={labelStyle}>2. Multi-Media Evidence Files (Photos/Audio/CCTV):*</label>
+                  <p style={{ fontSize: '0.7rem', color: '#64748b', margin: '4px 0 8px 0' }}>Upload photos of seized property, spot inspection, chassis numbers.</p>
+                  <input type="file" multiple onChange={handleEvidenceFileUpload} style={{ fontSize: '0.76rem' }} />
+                </div>
               </div>
 
-              {/* MEDIA EVIDENCE UPLOAD */}
-              <div style={{ background: '#ffffff', borderRadius: '16px', border: '1px solid #cbd5e1', padding: '18px', marginBottom: '20px' }}>
-                <div style={{ fontSize: '0.88rem', fontWeight: 800, color: '#1e3a8a', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Camera size={18} style={{ color: '#2563eb' }} /> Spot Media Evidence (Photos, Videos/CCTV, Seizure Docs)
-                </div>
-
-                <label style={{ background: '#f8fafc', border: '1.5px dashed #93c5fd', borderRadius: '12px', padding: '16px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', marginBottom: '12px' }}>
-                  <Upload size={22} color="#2563eb" style={{ marginBottom: '4px' }} />
-                  <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#1e3a8a' }}>Click to Browse Media & Evidence Files</span>
-                  <span style={{ fontSize: '0.68rem', color: '#64748b' }}>Upload spot photos, CCTV clips, recovered item pictures</span>
-                  <input type="file" multiple onChange={handleEvidenceFileUpload} style={{ display: 'none' }} />
-                </label>
-
-                {uploadedEvidences.length > 0 && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    {uploadedEvidences.map(file => (
-                      <div key={file.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#f8fafc', padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.74rem' }}>
-                        <span style={{ color: '#0f172a', fontWeight: 600 }}>📄 {file.name} ({file.size})</span>
-                        <button onClick={() => handleRemoveEvidence(file.id)} style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer' }}><X size={14} /></button>
-                      </div>
+              {uploadedEvidences.length > 0 && (
+                <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '12px', padding: '14px', marginBottom: '18px' }}>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 800, color: '#1e3a8a' }}>Attached Evidences ({uploadedEvidences.length}):</span>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '8px' }}>
+                    {uploadedEvidences.map(ev => (
+                      <span key={ev.id} style={{ background: '#ffffff', border: '1px solid #93c5fd', padding: '4px 10px', borderRadius: '6px', fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '6px', color: '#1e293b' }}>
+                        <Paperclip size={12} color="#1d4ed8" />
+                        <span>{ev.name} ({ev.size})</span>
+                        <button onClick={() => removeEvidence(ev.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: 0 }}><X size={12} /></button>
+                      </span>
                     ))}
                   </div>
-                )}
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '20px' }}>
-                <button onClick={() => setCurrentStep('step4')} style={btnSecondaryLight}><ArrowLeft size={16} /> Back</button>
-                <button onClick={handleSearchSimilarCases} style={{ ...btnPrimaryLight, background: 'linear-gradient(90deg, #6366f1, #4f46e5)' }}>
-                  <Zap size={16} />
-                  <span>Run AI Similar Case Matcher</span>
-                  <ArrowRight size={16} />
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* STEP 6: AI AUTOMATED SIMILAR / RELATED CASE MATCHES */}
-          {currentStep === 'step6' && (
-            <div style={stepCardStyle}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', borderBottom: '2px solid #eff6ff', paddingBottom: '10px' }}>
-                <h4 style={{ ...stepTitleStyle, margin: 0, border: 'none', padding: 0 }}>
-                  <Zap size={18} style={{ color: '#6366f1' }} /> Step 6: AI Automated Similar / Related Case Matcher
-                </h4>
-                <button onClick={handleSearchSimilarCases} style={{ ...btnSecondaryLight, padding: '4px 10px', fontSize: '0.72rem', color: '#4f46e5', borderColor: '#c7d2fe' }}>
-                  <RefreshCw size={13} className={isSearchingSimilar ? 'animate-spin' : ''} /> Refresh Matches
-                </button>
-              </div>
-
-              <p style={{ fontSize: '0.76rem', color: '#475569', marginBottom: '16px' }}>
-                Sentinel AI scanned the SCRB Case Database using location, suspect modus operandi, and recovered property serial patterns:
-              </p>
-
-              {isSearchingSimilar ? (
-                <div style={{ textAlign: 'center', padding: '30px', color: '#4f46e5', fontWeight: 700, fontSize: '0.85rem' }}>
-                  <RefreshCw size={24} className="animate-spin" style={{ margin: '0 auto 10px auto', display: 'block' }} />
-                  Searching database for matching M.O. and repeat offender leads...
-                </div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px' }}>
-                  {similarCases.map((match, idx) => (
-                    <div key={idx} style={{ background: '#f8fafc', border: '1.5px solid #c7d2fe', borderRadius: '14px', padding: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                      <div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                          <span style={{ fontSize: '0.72rem', background: '#4f46e5', color: 'white', fontWeight: 800, padding: '2px 8px', borderRadius: '6px' }}>
-                            {match.similarity}
-                          </span>
-                          <span style={{ fontSize: '0.82rem', fontWeight: 900, color: '#1e3a8a' }}>
-                            Case ID: {match.id}
-                          </span>
-                        </div>
-                        <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#0f172a', marginBottom: '4px' }}>
-                          {match.title} ({match.station})
-                        </div>
-                        <div style={{ fontSize: '0.74rem', color: '#475569', lineHeight: 1.4 }}>
-                          "{match.details}"
-                        </div>
-                      </div>
-                      <span style={{ fontSize: '0.68rem', color: '#059669', fontWeight: 800, background: '#ecfdf5', padding: '3px 8px', borderRadius: '6px', border: '1px solid #a7f3d0' }}>
-                        {match.status}
-                      </span>
-                    </div>
-                  ))}
                 </div>
               )}
 
               <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '20px' }}>
-                <button onClick={() => setCurrentStep('step5')} style={btnSecondaryLight}><ArrowLeft size={16} /> Back</button>
+                <button onClick={() => setCurrentStep('step4')} style={btnSecondaryLight}><ArrowLeft size={16} /> Back</button>
                 <button onClick={() => setCurrentStep('review')} style={btnPrimaryLight}>
-                  <span>Proceed to Final Verification</span>
+                  <span>Review Final Suo Moto Record</span>
                   <ArrowRight size={16} />
                 </button>
               </div>
             </div>
           )}
 
-          {/* STEP 7: REVIEW & VERIFY PAGE */}
+          {/* STEP 6: FINAL REVIEW & SUBMIT */}
           {currentStep === 'review' && (
             <div style={stepCardStyle}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', borderBottom: '2px solid #eff6ff', paddingBottom: '10px' }}>
                 <h4 style={{ ...stepTitleStyle, margin: 0, border: 'none', padding: 0 }}>
-                  <Eye size={18} style={{ color: '#2563eb' }} /> Step 7: Officer Verification & Suo Moto FIR Review
+                  <Eye size={18} style={{ color: '#1d4ed8' }} /> Step 6: Verify Suo Moto Patrol Crime Summary
                 </h4>
-                <button onClick={() => setCurrentStep('step1')} style={{ ...btnSecondaryLight, padding: '4px 10px', fontSize: '0.72rem', color: '#2563eb', borderColor: '#93c5fd' }}>
-                  <Edit3 size={13} /> Edit Case Form
+                <button onClick={() => setCurrentStep('step1')} style={{ ...btnSecondaryLight, padding: '4px 10px', fontSize: '0.72rem', color: '#1d4ed8', borderColor: '#93c5fd' }}>
+                  <Edit3 size={13} /> Edit Details
                 </button>
               </div>
 
-              {/* REVIEW SUMMARY CARD */}
-              <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '16px', border: '1px solid #cbd5e1', fontSize: '0.78rem', marginBottom: '16px', maxHeight: '280px', overflowY: 'auto' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px', borderBottom: '1px solid #e2e8f0', paddingBottom: '8px' }}>
-                  <span style={{ fontWeight: 800, color: '#1e3a8a' }}>🚔 Reporting Officer & Station:</span>
-                  <span style={{ color: '#1d4ed8', fontWeight: 800 }}>{officerName} ({officerBadge}) — {selectedStation}</span>
+              <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '16px', border: '1px solid #cbd5e1', fontSize: '0.78rem', marginBottom: '16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px', borderBottom: '1px solid #e2e8f0', paddingBottom: '8px' }}>
+                  <span style={{ fontWeight: 800, color: '#1e3a8a' }}>👮 Investigating Officer:</span>
+                  <span style={{ color: '#0f172a', fontWeight: 700 }}>{officerName} ({officerRank}) — Badge: {officerBadge}</span>
                 </div>
 
-                <div style={{ fontWeight: 800, color: '#1e3a8a', marginBottom: '6px' }}>📍 Spot Incident Details:</div>
-                <div style={{ color: '#334155', marginBottom: '12px', lineHeight: 1.5 }}>
-                  <b>Offense Category:</b> {crimeCategory}<br />
-                  <b>Date & Time:</b> {incidentDate} at {incidentTime}<br />
-                  <b>Spot Location:</b> {spotLocation}<br />
-                  <b>Observations:</b> "{spotNarrative}"
+                <div style={{ color: '#334155', marginBottom: '10px', lineHeight: 1.5 }}>
+                  <b>Police Station Jurisdiction:</b> {selectedStation}, {incidentDistrict} | <b>Beat Unit:</b> {beatUnit}<br />
+                  <b>Crime Nature:</b> {crimeCategory} | <b>Spot Date/Time:</b> {incidentDate} {incidentTime}<br />
+                  <b>Spot Location:</b> {spotLocation || 'Patrol Area'}<br />
+                  <b>Accused Particulars:</b> {suspectName || 'Unknown'} ({suspectStatus}) — {suspectAddress || 'N/A'}<br />
+                  <b>Seized Property:</b> {seizureDescription || 'None'} (Val: Rs. {estimatedValue || '0'}, Memo: {seizureMemoNo})
                 </div>
 
-                <div style={{ fontWeight: 800, color: '#1e3a8a', marginBottom: '6px' }}>👤 Accused & Seizure Panchanama:</div>
-                <div style={{ color: '#334155', marginBottom: '12px', lineHeight: 1.5 }}>
-                  <b>Accused Custody:</b> {suspectStatus} ({suspectName || 'Unidentified'})<br />
-                  <b>Property Seized:</b> {seizureCategory} (Rs. {estimatedValue || '0'}) — Memo: {seizureMemoNo}<br />
-                  <b>Pancha Witness:</b> {pancha1Name || 'Recorded'}
-                </div>
-
-                <div style={{ fontWeight: 800, color: '#1e3a8a', marginBottom: '6px' }}>📁 Officer Field Report & Attachments:</div>
-                <div style={{ color: '#334155', lineHeight: 1.5 }}>
-                  <b>Officer Report:</b> {officerReportFile || 'Logged'}<br />
-                  <b>Media Files:</b> {uploadedEvidences.map(f => f.name).join(', ') || 'None attached'}<br />
-                  <b>AI Similar Cases Found:</b> {similarCases.map(s => s.id).join(', ') || 'None'}
+                <div style={{ color: '#059669', fontWeight: 700, marginTop: '8px' }}>
+                  ✓ Zoho Catalyst DataStore Table: `PoliceInitiatedComplaints` (Automatic Real-time Sync Enabled).
                 </div>
               </div>
 
-              {/* OFFICER CONSENT CHECKBOX */}
+              {/* OFFICER CONSENT */}
               <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', padding: '12px', borderRadius: '12px', marginBottom: '18px' }}>
                 <label style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', cursor: 'pointer', fontSize: '0.75rem', color: '#1e3a8a', fontWeight: 700 }}>
                   <input type="checkbox" checked={officerConsent} onChange={e => setOfficerConsent(e.target.checked)} style={{ marginTop: '2px' }} />
-                  <span>I certify as duty officer that the patrol discovery details and seizure memos above are verified accurate under BNSS Sec 105 & Karnataka Police Act.</span>
+                  <span>I, {officerName} ({officerRank}), hereby declare that the above facts and spot recovery particulars are accurately recorded as per patrol observations and Panchanama procedure under BNSS Section 105.</span>
                 </label>
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <button onClick={() => setCurrentStep('step1')} style={btnSecondaryLight}><Edit3 size={15} /> Edit Details</button>
-                <button onClick={handleSubmitPoliceCase} disabled={isSubmitting} style={{ ...btnPrimaryLight, background: 'linear-gradient(90deg, #0f172a, #1e3a8a)', padding: '10px 22px', fontSize: '0.85rem' }}>
-                  {isSubmitting ? 'Registering Suo Moto FIR...' : 'Submit & Generate Police Case ID'}
+                <button onClick={() => setCurrentStep('step5')} style={btnSecondaryLight}><ArrowLeft size={16} /> Back</button>
+                <button onClick={handleSubmitPoliceCase} disabled={isSubmitting} style={{ ...btnPrimaryLight, background: 'linear-gradient(90deg, #1e3a8a, #1d4ed8)', padding: '10px 24px', fontSize: '0.85rem' }}>
+                  {isSubmitting ? 'Syncing to Catalyst DataStore...' : 'Register Suo Moto Crime & Sync to Catalyst'}
                   <CheckCircle2 size={18} />
                 </button>
               </div>
             </div>
           )}
 
-          {/* CONFIRMATION & UNIQUE POLICE CASE ID GENERATION SCREEN */}
+          {/* CONFIRMATION SCREEN */}
           {currentStep === 'confirmation' && (
             <div style={{ textAlign: 'center', padding: '24px 10px' }}>
-              <div style={{ background: '#1e3a8a', color: 'white', width: '64px', height: '64px', borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px', boxShadow: '0 10px 30px rgba(30,58,138,0.3)' }}>
-                <CheckCircle2 size={36} color="#60a5fa" />
+              <div style={{ background: '#10b981', color: 'white', width: '64px', height: '64px', borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px', boxShadow: '0 10px 30px rgba(16, 185, 129, 0.3)' }}>
+                <CheckCircle2 size={36} color="white" />
               </div>
-              <h3 style={{ fontSize: '1.5rem', fontWeight: 900, color: '#1e3a8a', marginBottom: '4px' }}>
-                Police-Initiated Suo Moto FIR Registered!
+              <h3 style={{ fontSize: '1.5rem', fontWeight: 900, color: '#03214c', marginBottom: '4px' }}>
+                Police-Initiated Suo Moto Case Registered & Synced to Catalyst DataStore!
               </h3>
               <p style={{ fontSize: '0.85rem', color: '#475569', marginBottom: '18px' }}>
-                The case record and seizure panchanama have been indexed into the SCRB Database.
+                The offense details, spot recovery panchanama, and digital evidences have been synchronized with the <b>Zoho Catalyst DataStore</b>.
               </p>
 
-              {/* UNIQUE POLICE CASE ID DISPLAY BOX */}
-              <div style={{ background: '#ffffff', border: '2px dashed #1e3a8a', padding: '18px', borderRadius: '18px', maxWidth: '460px', margin: '0 auto 24px auto', boxShadow: '0 4px 16px rgba(30,58,138,0.1)' }}>
-                <span style={{ fontSize: '0.72rem', color: '#1d4ed8', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1px' }}>Official Police Case Reference ID</span>
-                <div style={{ fontSize: '1.8rem', fontWeight: 900, color: '#1e3a8a', letterSpacing: '1.5px', marginTop: '4px', marginBottom: '4px' }}>
+              <div style={{ background: '#ffffff', border: '2px dashed #2563eb', padding: '18px', borderRadius: '18px', maxWidth: '480px', margin: '0 auto 24px auto', boxShadow: '0 4px 16px rgba(37,99,235,0.08)' }}>
+                <span style={{ fontSize: '0.72rem', color: '#1d4ed8', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1px' }}>Official Police Case Number</span>
+                <div style={{ fontSize: '1.8rem', fontWeight: 900, color: '#03214c', letterSpacing: '1.5px', marginTop: '4px', marginBottom: '4px' }}>
                   {refNumber || 'KSP-POL-2026-48912'}
                 </div>
-                <div style={{ fontSize: '0.74rem', color: '#64748b' }}>Reporting Officer: <b>{officerName}</b> ({selectedStation})</div>
+                <div style={{ fontSize: '0.74rem', color: '#64748b' }}>Station: <b>{selectedStation}</b> • Officer: <b>{officerName}</b></div>
               </div>
 
-              {/* ACTION BUTTONS */}
               <div style={{ display: 'flex', gap: '14px', justifyContent: 'center' }}>
                 <button
                   onClick={downloadPoliceReportPDF}
-                  style={{ background: '#1e3a8a', color: 'white', border: 'none', padding: '12px 22px', borderRadius: '12px', fontWeight: 800, fontSize: '0.88rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 4px 16px rgba(30,58,138,0.3)' }}
+                  style={{ background: '#1d4ed8', color: 'white', border: 'none', padding: '12px 22px', borderRadius: '12px', fontWeight: 800, fontSize: '0.88rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 4px 16px rgba(29,78,216,0.3)' }}
                 >
-                  <Download size={18} /> Download Official Seizure Report (PDF)
+                  <Download size={18} /> Download Spot Seizure Memo PDF (BNSS Sec 105)
                 </button>
                 <button
                   onClick={onClose}
-                  style={{ background: '#ffffff', color: '#1e3a8a', border: '1.5px solid #cbd5e1', padding: '12px 22px', borderRadius: '12px', fontWeight: 800, fontSize: '0.88rem', cursor: 'pointer' }}
+                  style={{ background: '#ffffff', color: '#1d4ed8', border: '1.5px solid #cbd5e1', padding: '12px 22px', borderRadius: '12px', fontWeight: 800, fontSize: '0.88rem', cursor: 'pointer' }}
                 >
-                  Return to Sentinel Chatbot
+                  Return to Chatbot
                 </button>
               </div>
             </div>
           )}
 
         </div>
-
       </div>
     </div>
   );
@@ -977,13 +850,19 @@ const stepCardStyle = {
 const stepTitleStyle = {
   fontSize: '1rem',
   fontWeight: 900,
-  color: '#1e3a8a',
-  marginBottom: '16px',
-  borderBottom: '2px solid #eff6ff',
-  paddingBottom: '10px',
+  color: '#03214c',
+  marginBottom: '4px',
   display: 'flex',
   alignItems: 'center',
   gap: '8px'
+};
+
+const stepDescStyle = {
+  fontSize: '0.75rem',
+  color: '#64748b',
+  marginBottom: '16px',
+  borderBottom: '1px solid #f1f5f9',
+  paddingBottom: '8px'
 };
 
 const labelStyle = {
@@ -1008,7 +887,7 @@ const lightInputStyle = {
 };
 
 const btnPrimaryLight = {
-  background: 'linear-gradient(90deg, #1d4ed8, #2563eb)',
+  background: 'linear-gradient(90deg, #1e3a8a 0%, #1d4ed8 100%)',
   color: 'white',
   border: 'none',
   padding: '10px 18px',
@@ -1019,7 +898,7 @@ const btnPrimaryLight = {
   display: 'flex',
   alignItems: 'center',
   gap: '8px',
-  boxShadow: '0 4px 14px rgba(37,99,235,0.25)'
+  boxShadow: '0 4px 14px rgba(29, 78, 216, 0.25)'
 };
 
 const btnSecondaryLight = {
@@ -1034,6 +913,37 @@ const btnSecondaryLight = {
   display: 'flex',
   alignItems: 'center',
   gap: '8px'
+};
+
+const featureBoxStyle = {
+  background: '#f8fafc',
+  border: '1px solid #e2e8f0',
+  borderRadius: '14px',
+  padding: '14px'
+};
+
+const featureIconCircle = {
+  width: '32px',
+  height: '32px',
+  borderRadius: '8px',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  marginBottom: '8px'
+};
+
+const featureTitleStyle = {
+  fontSize: '0.82rem',
+  fontWeight: 800,
+  color: '#03214c',
+  margin: '0 0 4px 0'
+};
+
+const featureDescStyle = {
+  fontSize: '0.68rem',
+  color: '#64748b',
+  margin: 0,
+  lineHeight: 1.4
 };
 
 export default PoliceInitiatedComplaintPortal;

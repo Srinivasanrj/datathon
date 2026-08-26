@@ -1,0 +1,21 @@
+{
+  "name": "ksp-document-rag-pipeline",
+  "version": "1.0.0",
+  "description": "Portable, evidence-grounded Document Upload, Zia OCR, Passage Retrieval, and Question-Answering (RAG) pipeline for law enforcement and enterprise applications.",
+  "main": "node/index.js",
+  "type": "module",
+  "keywords": [
+    "rag",
+    "document-qa",
+    "ocr",
+    "zia-ocr",
+    "catalyst",
+    "evidence-grounding",
+    "ksp-sentinel"
+  ],
+  "author": "Karnataka State Police / KSP Sentinel AI Team",
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^16.4.5"
+  }
+}

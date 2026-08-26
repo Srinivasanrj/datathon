@@ -55,7 +55,7 @@ def supervisor_agent_router(query: str, history: list = None) -> dict:
         'document_agent':     {'label': 'Document Agent',     'icon': '📄', 'color': '#059669', 'description': 'RAG Knowledge Store & Case PDFs'},
         'pattern_agent':      {'label': 'Pattern Agent',      'icon': '🔍', 'color': '#d97706', 'description': 'Crime Pattern Matching & Similarity'},
         'intelligence_agent': {'label': 'Intelligence Agent', 'icon': '🕵️', 'color': '#7c3aed', 'description': 'Criminal Network & Mule Trail'},
-        'general_agent':      {'label': 'DRUSHTI AI',   'icon': '🛡️', 'color': '#1e40af', 'description': 'General Command Operations'},
+        'general_agent':      {'label': 'KSP DRISHTI',   'icon': '🛡️', 'color': '#1e40af', 'description': 'General Command Operations'},
     }
 
     q_clean = query.lower().strip()
@@ -132,7 +132,7 @@ def supervisor_agent_router(query: str, history: list = None) -> dict:
             'agents': [{
                 'agent_type': 'general_agent',
                 'purpose': 'Legal definition & SOP knowledge query',
-                'agent_label': 'DRUSHTI AI',
+                'agent_label': 'KSP DRISHTI',
                 'agent_icon': '🛡️',
                 'agent_color': '#1e40af',
                 'agent_description': 'General Command & Legal Operations'
@@ -1532,5 +1532,87 @@ def handle_complaints():
         }), 200
 
 
+# ============================================================
+# POLICE-INITIATED COMPLAINT / SUO MOTO FIR STORE & ROUTES
+# In-memory store for police-initiated complaints (Suo Moto FIRs)
+# ============================================================
 
+POLICE_CASES_STORE = []
+
+@chat_bp.route('/api/submit_police_case', methods=['POST', 'GET'])
+def submit_police_case():
+    """
+    POST: Accept a new police-initiated Suo Moto FIR case and store it.
+    GET:  Return all stored police-initiated cases (filterable by station/district).
+    """
+    if request.method == 'POST':
+        try:
+            data = request.get_json(force=True) or {}
+
+            import datetime
+            now_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+            # Use the CaseId from the frontend if provided, else generate one
+            case_id = data.get('CaseId') or f"KSP-POL-{datetime.datetime.now().strftime('%Y')}-{__import__('random').randint(10000, 99999)}"
+            fir_number = data.get('FirNumber') or f"FIR-{datetime.datetime.now().strftime('%Y')}-BLR-{__import__('random').randint(100, 999)}"
+
+            case_entry = {
+                'id': case_id,
+                'CaseId': case_id,
+                'FirNumber': fir_number,
+                'OfficerBadge': data.get('OfficerBadge', ''),
+                'OfficerName': data.get('OfficerName', ''),
+                'OfficerRank': data.get('OfficerRank', ''),
+                'Division': data.get('Division', ''),
+                'SubDivision': data.get('SubDivision', ''),
+                'PoliceStation': data.get('PoliceStation', ''),
+                'BeatUnit': data.get('BeatUnit', ''),
+                'CrimeCategory': data.get('CrimeCategory', ''),
+                'IncidentDate': data.get('IncidentDate', ''),
+                'SpotLocation': data.get('SpotLocation', ''),
+                'SpotNarrative': data.get('SpotNarrative', ''),
+                'SuspectStatus': data.get('SuspectStatus', ''),
+                'SuspectName': data.get('SuspectName', ''),
+                'SuspectDetails': data.get('SuspectDetails', ''),
+                'SeizedItems': data.get('SeizedItems', ''),
+                'SeizureValue': data.get('SeizureValue', ''),
+                'PanchaWitness': data.get('PanchaWitness', ''),
+                'EvidenceCount': data.get('EvidenceCount', 0),
+                'CaseStatus': data.get('CaseStatus', 'REGISTERED'),
+                'InvestigationSummary': data.get('InvestigationSummary', ''),
+                'FilingTimestamp': data.get('FilingTimestamp', now_str),
+                'created_at': now_str
+            }
+
+            POLICE_CASES_STORE.insert(0, case_entry)
+            logger.info(f"Registered new Police-Initiated (Suo Moto) Case: {case_id} — Officer: {data.get('OfficerName')} — Station: {data.get('PoliceStation')}")
+
+            return jsonify({
+                'success': True,
+                'CaseId': case_id,
+                'FirNumber': fir_number,
+                'message': 'Police-initiated Suo Moto case successfully registered in KSP DataStore',
+                'created_at': now_str
+            }), 201
+
+        except Exception as e:
+            logger.error(f"Error registering police case: {e}")
+            return jsonify({'success': False, 'error': str(e)}), 500
+
+    else:  # GET
+        station = request.args.get('station', '').strip().lower()
+        district = request.args.get('district', '').strip().lower()
+
+        filtered = POLICE_CASES_STORE
+
+        if station:
+            filtered = [c for c in POLICE_CASES_STORE if station in c.get('PoliceStation', '').lower()]
+        elif district:
+            filtered = [c for c in POLICE_CASES_STORE if district in c.get('SubDivision', '').lower()]
+
+        return jsonify({
+            'success': True,
+            'count': len(filtered),
+            'cases': filtered
+        }), 200
 

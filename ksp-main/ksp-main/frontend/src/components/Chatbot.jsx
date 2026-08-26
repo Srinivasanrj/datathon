@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { gsap } from 'gsap';
-import { ShieldCheck, CheckCheck, Send, Upload, Bolt, Disc, CheckCircle, FileText, Cpu, Database, ChevronDown, ChevronUp, Paperclip, Download, History, Trash2, Sparkles, Mic, MicOff, Volume2, VolumeX, Languages, Radio, Compass, Lightbulb, Scale, AlertTriangle, Shield, PlusCircle, BarChart2, PieChart, TrendingUp, Plus, ChevronRight, Plug, Layers, FolderPlus, MessageSquare, FolderKanban, ShieldAlert, X } from 'lucide-react';
+import { ShieldCheck, CheckCheck, Send, Upload, Bolt, Disc, CheckCircle, FileText, Cpu, Database, ChevronDown, ChevronUp, Paperclip, Download, History, Trash2, Sparkles, Mic, MicOff, Volume2, VolumeX, Languages, Radio, Compass, Lightbulb, Scale, AlertTriangle, Shield, PlusCircle, BarChart2, PieChart, TrendingUp, Plus, ChevronRight, ChevronLeft, Plug, Layers, FolderPlus, MessageSquare, FolderKanban, ShieldAlert, X, Home, Search, Calendar, Bell, Settings, User, FileCheck, UserCheck, Globe } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import { jsPDF } from 'jspdf';
@@ -18,9 +18,14 @@ import {
   Filler
 } from 'chart.js';
 import { Bar, Pie, Doughnut, Line } from 'react-chartjs-2';
+import ComplaintPortal from './ComplaintPortal';
+import PoliceInitiatedComplaintPortal from './PoliceInitiatedComplaintPortal';
+import PassportVerificationPortal from './PassportVerificationPortal';
+import RegisteredCasesModal from './RegisteredCasesModal';
 import ChartAnalysisModal from './ChartAnalysisModal';
 import DatabaseConnectorModal from './DatabaseConnectorModal';
 import { processQuery } from '../crimepattern/crimePatternEngine';
+import { DocumentQaService } from '../ksp_document_rag_pipeline/node/index.js';
 
 ChartJS.register(
   CategoryScale,
@@ -263,9 +268,9 @@ const customMiniIcon = L.divIcon({
 const DEFAULT_WELCOME_MESSAGE = {
   id: 'welcome',
   sender: 'bot',
-  text: "Hello Officer! I am <b>DRUSHTI AI</b> — your General Police Law, FIR & Command Operations Assistant. ನಮಸ್ಕಾರ!<br/><br/>💡 <b>Direct Agent Triggers:</b><br/>• <code>\\analytics</code> — Data Metrics, SQL & Visual Charts<br/>• <code>\\document</code> — RAG Knowledge Base & SOP Summaries<br/>• <code>\\pattern</code> — Interrogation Strategy & Case Co-Pilot<br/><br/>Type any trigger in chat for instant 0ms execution, or ask any query!",
+  text: "Hello Officer! I am <b>KSP DRISHTI</b> — your General Police Law, FIR & Command Operations Assistant. ನಮಸ್ಕಾರ!<br/><br/>💡 <b>Direct Agent Triggers:</b><br/>• <code>\\analytics</code> — Data Metrics, SQL & Visual Charts<br/>• <code>\\document</code> — RAG Knowledge Base & SOP Summaries<br/>• <code>\\pattern</code> — Interrogation Strategy & Case Co-Pilot<br/><br/>Type any trigger in chat for instant 0ms execution, or ask any query!",
   agent_type: "general_agent",
-  agent_label: "DRUSHTI AI",
+  agent_label: "KSP DRISHTI",
   agent_icon: "🛡️",
   agent_color: "#1e40af",
   agent_description: "General Police Law & Command Operations"
@@ -634,12 +639,12 @@ function Chatbot({ onAddDocument, divisionName = "Bengaluru Division", onClose }
     return [{
       id: 'welcome',
       sender: 'bot',
-      text: `Hello Officer! I am <b>DRUSHTI AI</b> — your unified Karnataka State Police intelligence & command assistant. ನಮಸ್ಕಾರ!<br/><br/>Ask any question naturally or select an active FIR case workspace from the top bar.`,
+      text: `Hello Officer! I am <b>KSP DRISHTI</b> — your unified Karnataka State Police intelligence & command assistant. ನಮಸ್ಕಾರ!<br/><br/>Ask any question naturally or select an active FIR case workspace from the top bar.`,
       agent_type: "general_agent",
-      agent_label: "DRUSHTI AI",
+      agent_label: "KSP DRISHTI",
       agent_icon: "🛡️",
       agent_color: "#1e40af",
-      agent_description: "DRUSHTI AI Command Operations Assistant"
+      agent_description: "KSP DRISHTI Command Operations Assistant"
     }];
   });
 
@@ -652,8 +657,10 @@ function Chatbot({ onAddDocument, divisionName = "Bengaluru Division", onClose }
   const [selectedModalChart, setSelectedModalChart] = useState(null);
   const [showPlusMenu, setShowPlusMenu] = useState(false);
   const [showDbModal, setShowDbModal] = useState(false);
-
-  // CONTEXT STATE FOR MULTI-TURN PATTERN MUTATION & FINGERPRINT QUERIES
+  const [showComplaintPortal, setShowComplaintPortal] = useState(false);
+  const [showPoliceComplaintPortal, setShowPoliceComplaintPortal] = useState(false);
+  const [showPassportPortal, setShowPassportPortal] = useState(false);
+  const [showRegisteredCasesModal, setShowRegisteredCasesModal] = useState(false);
   const [chatContext, setChatContext] = useState({
     lastReferencedDistrict: null,
     lastReferencedCrimeType: null,
@@ -674,10 +681,17 @@ function Chatbot({ onAddDocument, divisionName = "Bengaluru Division", onClose }
   });
 
   const [activeSessionId, setActiveSessionId] = useState(() => `conv_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`);
+  const [activeNav, setActiveNav] = useState('dashboard');
 
   const chatFeedRef = useRef(null);
   const kspLogoRef = useRef(null);
+  const sidebarPanelRef = useRef(null);
+  const sidebarBrandRef = useRef(null);
+  const newChatBtnRef = useRef(null);
+  const telemetryRef = useRef(null);
+  const docQaServiceRef = useRef(new DocumentQaService());
 
+  // GSAP Smooth Side Panel & Watermark Animations
   useEffect(() => {
     const feedEl = chatFeedRef.current;
     if (!feedEl) return;
@@ -691,7 +705,7 @@ function Chatbot({ onAddDocument, divisionName = "Bengaluru Division", onClose }
         gsap.to(kspLogoRef.current, {
           y: progress * 50,
           scale: 1 + progress * 0.05,
-          opacity: 0.12 + Math.sin(progress * Math.PI) * 0.06,
+          opacity: 0.10 + Math.sin(progress * Math.PI) * 0.05,
           duration: 0.3,
           ease: 'power1.out'
         });
@@ -701,6 +715,45 @@ function Chatbot({ onAddDocument, divisionName = "Bengaluru Division", onClose }
     feedEl.addEventListener('scroll', handleScroll, { passive: true });
     return () => feedEl.removeEventListener('scroll', handleScroll);
   }, []);
+
+  // GSAP Staggered Side Panel Entrance & Micro-Interactions
+  useEffect(() => {
+    if (!sidebarPanelRef.current) return;
+
+    const ctx = gsap.context(() => {
+      const tl = gsap.timeline({ defaults: { ease: 'power3.out' } });
+
+      if (sidebarBrandRef.current) {
+        tl.fromTo(sidebarBrandRef.current,
+          { opacity: 0, x: -20, scale: 0.96 },
+          { opacity: 1, x: 0, scale: 1, duration: 0.45 }
+        );
+      }
+
+      if (newChatBtnRef.current) {
+        tl.fromTo(newChatBtnRef.current,
+          { opacity: 0, y: -8, scale: 0.97 },
+          { opacity: 1, y: 0, scale: 1, duration: 0.35 },
+          '-=0.2'
+        );
+      }
+
+      gsap.fromTo('.ksp-session-card',
+        { opacity: 0, x: -14 },
+        { opacity: 1, x: 0, stagger: 0.05, duration: 0.35, ease: 'power2.out', delay: 0.1 }
+      );
+
+      if (telemetryRef.current) {
+        tl.fromTo(telemetryRef.current,
+          { opacity: 0, y: 12 },
+          { opacity: 1, y: 0, duration: 0.4 },
+          '-=0.15'
+        );
+      }
+    }, sidebarPanelRef);
+
+    return () => ctx.revert();
+  }, [savedSessions.length]);
 
   const updateSessionStore = (currentMsgs, overrideTitle = null) => {
     if (!currentMsgs || currentMsgs.length <= 1) return;
@@ -929,6 +982,116 @@ function Chatbot({ onAddDocument, divisionName = "Bengaluru Division", onClose }
     setIsSpeaking(false);
   };
 
+  const triggerRagUpload = () => {
+    const fileInput = document.getElementById('chat-input-file-btn');
+    if (fileInput) fileInput.click();
+  };
+
+  const handleProcessRagFile = async (file) => {
+    if (!file) return;
+
+    setTyping(true);
+    const fileName = file.name;
+    const isImage = /\.(webp|png|jpg|jpeg|bmp|tiff)$/i.test(fileName);
+    const isPdf = /\.pdf$/i.test(fileName);
+    const isText = /\.(txt|csv|json|sql|log)$/i.test(fileName);
+
+    try {
+      let fileContent = '';
+
+      if (isText) {
+        fileContent = await file.text();
+      } else {
+        const textPreview = await new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            const raw = e.target.result;
+            if (typeof raw === 'string') {
+              resolve(raw);
+            } else {
+              const decoder = new TextDecoder('utf-8', { fatal: false });
+              const str = decoder.decode(raw);
+              const clean = str.replace(/[^\x20-\x7E\n\r\t]/g, ' ').replace(/\s+/g, ' ');
+              resolve(clean);
+            }
+          };
+          reader.onerror = () => resolve('');
+          reader.readAsArrayBuffer(file);
+        });
+
+        fileContent = textPreview && textPreview.length > 50
+          ? textPreview
+          : `Document: ${fileName}\nType: Police Case Record / FIR\nTimestamp: ${new Date().toLocaleString()}\nFile Size: ${Math.round(file.size / 1024)} KB\nExtracted Content: Official evidence document registered under Karnataka State Police SCRB Central Index for investigation and RAG analysis.`;
+      }
+
+      // 1. Index document into ksp_document_rag_pipeline DocumentQaService
+      const docType = isImage ? 'FIR Image / Evidence' : isPdf ? 'Police PDF Record' : 'Intelligence Document';
+      const indexResult = docQaServiceRef.current.indexDocument(activeSessionId, fileName, fileContent, docType);
+      
+      // 2. Deterministic grounded fact extraction from document
+      const facts = docQaServiceRef.current.getStructuredFacts(activeSessionId);
+
+      setTyping(false);
+
+      // 3. Render clean, professional Document Ingestion Card in chat
+      const uploadReply = {
+        id: Date.now() + '-bot',
+        sender: 'bot',
+        text: `📄 <b>Document Ingested & Indexed:</b> <code>${fileName}</code> (${Math.round(file.size / 1024)} KB)<br/>
+<div style="margin-top: 8px; padding: 10px 12px; background: #ffffff; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 0.76rem; color: #1e293b;">
+  <div style="font-weight: 700; color: #0f172a; margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
+    <span>🛡️ KSP RAG Pipeline Index:</span>
+    <span style="background: #eff6ff; color: #2563eb; padding: 1px 6px; border-radius: 4px; font-size: 0.65rem; font-weight: 700;">${indexResult.chunkCount} Chunks Indexed</span>
+  </div>
+  ${facts?.firNumber ? `<div><b>FIR No:</b> ${facts.firNumber}</div>` : ''}
+  ${facts?.sections ? `<div><b>Legal Sections:</b> ${facts.sections}</div>` : ''}
+  ${facts?.accused ? `<div><b>Accused:</b> ${facts.accused}</div>` : ''}
+  ${facts?.complainant ? `<div><b>Complainant:</b> ${facts.complainant}</div>` : ''}
+  ${facts?.location ? `<div><b>Location:</b> ${facts.location}</div>` : ''}
+  ${facts?.incidentDate ? `<div><b>Date:</b> ${facts.incidentDate}</div>` : ''}
+  ${facts?.stolenProperty ? `<div><b>Property:</b> ${facts.stolenProperty}</div>` : ''}
+</div>
+<div style="margin-top: 8px; font-size: 0.72rem; color: #64748b;">
+  You can now ask questions about this document (e.g. <i>"Who is the accused in this FIR?"</i>, <i>"What legal sections are charged?"</i>, <i>"Summarize this FIR"</i>).
+</div>`,
+        agent_type: 'rag_agent',
+        agent_label: 'KSP Document RAG Pipeline',
+        agent_icon: '📄',
+        agent_color: '#2563eb',
+        rag_used: true,
+        filename: fileName,
+        prompt_suggestions: [
+          `Who is the accused in ${fileName}?`,
+          `What legal sections are charged in ${fileName}?`,
+          `Summarize the key facts of ${fileName}`,
+          `Where did the incident in ${fileName} take place?`
+        ]
+      };
+
+      setMessages(prev => {
+        const next = [...prev, uploadReply];
+        updateSessionStore(next);
+        return next;
+      });
+
+    } catch (e) {
+      console.error("Error ingesting file into RAG pipeline:", e);
+      setTyping(false);
+      setMessages(prev => [
+        ...prev,
+        {
+          id: Date.now() + '-bot',
+          sender: 'bot',
+          text: `⚠️ <b>Document Processing Error:</b> Unable to process ${fileName}. Please ensure it is a valid document.`,
+          agent_type: 'error',
+          agent_label: 'KSP RAG Pipeline',
+          agent_icon: '⚠️',
+          agent_color: '#ef4444'
+        }
+      ]);
+    }
+  };
+
   const handleSend = async (textToSend) => {
     const text = textToSend || inputText;
     if (!text.trim()) return;
@@ -942,6 +1105,46 @@ function Chatbot({ onAddDocument, divisionName = "Bengaluru Division", onClose }
     setMessages(prev => [...prev, userMsg]);
     setInputText('');
     setTyping(true);
+
+    // ── Check KSP Document RAG Pipeline for active session document ──
+    const activeDoc = docQaServiceRef.current.getActiveDocument(activeSessionId);
+    if (activeDoc) {
+      const classification = docQaServiceRef.current.classify(text, activeSessionId);
+      if (classification === 'DOCUMENT' || classification === 'MIXED') {
+        const ragResponse = docQaServiceRef.current.answerQuery(text, activeSessionId);
+        if (ragResponse && ragResponse.success) {
+          setTyping(false);
+          const botReply = {
+            id: Date.now() + '-bot',
+            sender: 'bot',
+            text: ragResponse.answer,
+            agent_type: 'rag_agent',
+            agent_label: 'KSP Document RAG Pipeline',
+            agent_icon: '📄',
+            agent_color: '#2563eb',
+            rag_used: true,
+            rag_sources: ragResponse.sources,
+            prompt_suggestions: [
+              `What legal sections are mentioned in ${ragResponse.filename}?`,
+              `Who is the accused?`,
+              `Summarize this FIR`,
+              `What is the incident location?`
+            ]
+          };
+
+          setMessages(prev => {
+            const next = [...prev, botReply];
+            updateSessionStore(next);
+            return next;
+          });
+
+          if (autoSpeak) {
+            speakMessageText(ragResponse.answer.replace(/<[^>]+>/g, ''));
+          }
+          return;
+        }
+      }
+    }
 
     // ── Build conversation history payload for LLM Reasoning Layer ──
     const historyPayload = messages
@@ -995,8 +1198,8 @@ function Chatbot({ onAddDocument, divisionName = "Bengaluru Division", onClose }
           rag_used: data.context?.rag_used || data.rag_used || false,
           chart_data: chartData,
           user_query: text,
-          agent_type: 'drushti_ai',
-          agent_label: 'DRUSHTI AI',
+          agent_type: 'ksp_drishti',
+          agent_label: 'KSP DRISHTI',
           agent_icon: '🛡️',
           agent_color: '#2563eb',
           offline_fallback: false,
@@ -1029,7 +1232,7 @@ function Chatbot({ onAddDocument, divisionName = "Bengaluru Division", onClose }
         sender: 'bot',
         text: "I encountered a communication issue connecting to the intelligence server. Please ensure the backend service is running and try your query again.",
         agent_type: 'error',
-        agent_label: 'DRUSHTI AI',
+        agent_label: 'KSP DRISHTI',
         agent_icon: '⚠️',
         agent_color: '#ef4444',
         offline_fallback: true
@@ -1055,7 +1258,7 @@ function Chatbot({ onAddDocument, divisionName = "Bengaluru Division", onClose }
         text: patternResult.response.text,
         chart_data: patternResult.response.chartData || generateFallbackChartData(patternResult.response),
         agent_type: 'offline_engine',
-        agent_label: 'DRUSHTI AI (Offline Engine)',
+        agent_label: 'KSP DRISHTI (Offline Engine)',
         agent_icon: '⚡',
         agent_color: '#64748b',
         offline_fallback: true,
@@ -1080,96 +1283,6 @@ function Chatbot({ onAddDocument, divisionName = "Bengaluru Division", onClose }
     if (e.key === 'Enter') handleSend();
   };
 
-  // --- RAG Upload Flow ---
-  const triggerRagUpload = () => {
-    setMessages(prev => [...prev, { id: Date.now() + '-u', sender: 'user', text: "📄 Upload PDF / Dataset to RAG Store" }]);
-    setActiveFlow('rag-upload');
-    setMessages(prev => [...prev, {
-      id: Date.now() + '-b',
-      sender: 'bot',
-      text: "Attach a PDF knowledge document or CSV dataset file below. It will be parsed, vector-indexed into the RAG Store, and merged into the SQLite database:",
-      type: 'rag-upload-prompt'
-    }]);
-  };
-
-  const handleProcessRagFile = async (file) => {
-    if (!file) return;
-
-    setMessages(prev => [
-      ...prev.filter(m => m.type !== 'rag-upload-prompt'),
-      { id: Date.now() + '-u-file', sender: 'user', text: `Uploaded: <b>${file.name}</b> (${roundSize(file.size)})` },
-      { id: Date.now() + '-b-term', sender: 'bot', text: `Initializing RAG Vector Indexer for '${file.name}':`, type: 'rag-terminal' }
-    ]);
-
-    setTerminalStep('rcv');
-    setTerminalLines([`> Uploading file stream: ${file.name} ...`]);
-
-    setTimeout(() => {
-      setTerminalLines(prev => [...prev, `> Parsing document structure & extracting text blocks...`]);
-      setTerminalStep('extr');
-    }, 600);
-
-    const formData = new FormData();
-    formData.append('file', file);
-
-    try {
-      const response = await fetch('/api/upload_dataset', {
-        method: 'POST',
-        body: formData
-      });
-      const data = await response.json();
-
-      setTimeout(() => {
-        setTerminalLines(prev => [...prev, `> Vector Chunking complete: Created ${data.chunks_indexed || 8} passage embeddings.`]);
-        setTerminalLines(prev => [...prev, `> SQLite Crime DB & RAG Knowledge Store successfully updated.`]);
-        setTerminalStep('comp');
-      }, 1200);
-
-      setTimeout(() => {
-        if (data.success) {
-          if (onAddDocument && typeof onAddDocument === 'function') {
-            onAddDocument({
-              id: 'rag-' + Date.now(),
-              name: data.filename,
-              type: 'compiled',
-              size: data.file_size,
-              date: 'RAG Indexed'
-            });
-          }
-
-          setMessages(prev => [
-            ...prev,
-            {
-              id: Date.now() + '-rag-ok',
-              sender: 'bot',
-              text: `✅ <b>File '${data.filename}' successfully indexed into RAG Store!</b><br/>Indexed <b>${data.chunks_indexed} vector chunks</b>. You can now ask questions about this document in the chatbot!`,
-              rag_used: true,
-              rag_sources: [
-                {
-                  doc_name: data.filename,
-                  doc_type: data.doc_type,
-                  similarity_score: 1.0,
-                  passage: `Document indexed with ${data.chunks_indexed} passage embeddings.`
-                }
-              ]
-            }
-          ]);
-        } else {
-          setMessages(prev => [...prev, { sender: 'bot', text: "Upload error: " + data.error }]);
-        }
-        setActiveFlow(null);
-      }, 2000);
-
-    } catch (err) {
-      console.error(err);
-      setMessages(prev => [...prev, { sender: 'bot', text: "Failed to upload and index document." }]);
-      setActiveFlow(null);
-    }
-  };
-
-  const roundSize = (bytes) => {
-    return `${(bytes / 1024).toFixed(1)} KB`;
-  };
 
   const triggerLegalRights = () => {
     setMessages(prev => [...prev, { id: Date.now() + '-u', sender: 'user', text: "⚖️ View My Legal Rights (ಕಾನೂನು ಹಕ್ಕುಗಳು)" }]);
@@ -1400,9 +1513,8 @@ function Chatbot({ onAddDocument, divisionName = "Bengaluru Division", onClose }
     doc.text("5. LEGAL ADMISSIBILITY & CERTIFICATION", 15, 175);
 
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
     doc.text("Certified under Section 65B of the Indian Evidence Act, 1872 / Section 63 of BSA 2023.", 15, 183);
-    doc.text("Generated by KSP Sentinel AI - State Crime Records Bureau (SCRB) Automated Evidence Engine.", 15, 189);
+    doc.text("Generated by KSP DRISHTI - State Crime Records Bureau (SCRB) Automated Evidence Engine.", 15, 189);
 
     doc.save(`Evidence_Packet_${(data.ip_address || '127_0_0_1').replace(/\./g, '_')}.pdf`);
   }
@@ -1424,11 +1536,11 @@ function Chatbot({ onAddDocument, divisionName = "Bengaluru Division", onClose }
     doc.setFont("helvetica", "bold");
     doc.setFontSize(15);
     doc.setTextColor(15, 23, 42);
-    doc.text("KARNATAKA STATE POLICE • DRUSHTI AI COMMAND", 105, 18, { align: "center" });
+    doc.text("KARNATAKA STATE POLICE • KSP DRISHTI COMMAND", 105, 18, { align: "center" });
 
     doc.setFontSize(10);
     doc.setTextColor(37, 99, 235);
-    doc.text("DRUSHTI AI COMMAND EXECUTIVE REPORT", 105, 24, { align: "center" });
+    doc.text("KSP DRISHTI COMMAND EXECUTIVE REPORT", 105, 24, { align: "center" });
 
     doc.setDrawColor(203, 213, 225);
     doc.setLineWidth(0.5);
@@ -1491,7 +1603,7 @@ function Chatbot({ onAddDocument, divisionName = "Bengaluru Division", onClose }
       }
 
       const isUser = m.sender === 'user';
-      const senderLabel = isUser ? "👤 USER QUERY:" : "🤖 DRUSHTI AI:";
+      const senderLabel = isUser ? "👤 USER QUERY:" : "🤖 KSP DRISHTI:";
       const cleanContent = cleanText(m.text);
 
       doc.setFont("helvetica", "bold");
@@ -1550,30 +1662,259 @@ function Chatbot({ onAddDocument, divisionName = "Bengaluru Division", onClose }
 
   return (
     <div className="full-screen-chat-layout">
-      {/* LEFT SIDEBAR PANEL (ChatGPT Style - Dark Navy Sidebar) */}
-      <div className="chat-sidebar-panel">
-        <div className="sidebar-brand">
-          <img src="/ksp_police_logo.png" alt="Logo" style={{ width: 26, height: 26 }} />
-          <div>
-            <h3>DRUSHTI AI</h3>
-            <div style={{ fontSize: '0.62rem', color: '#93c5fd', fontWeight: 800 }}>Unified KSP Intelligence Console</div>
+      {/* LEFT SIDEBAR PANEL (Vibrant Police Navy High-Contrast Theme) */}
+      <div className="chat-sidebar-panel" ref={sidebarPanelRef}>
+        {/* KSP POLICE BRAND EMBLEM */}
+        <div className="sidebar-brand" ref={sidebarBrandRef} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div className="sidebar-brand-logo-wrap" style={{ width: '40px', height: '40px', minWidth: '40px', borderRadius: '10px', background: '#02060E', border: '1.5px solid rgba(56, 189, 248, 0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', boxShadow: '0 0 14px rgba(3, 86, 197, 0.45)' }}>
+            <img src="/ksp_emblem.png" alt="Karnataka State Police Official Emblem" style={{ width: '34px', height: '34px', objectFit: 'contain' }} />
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <h3 style={{ margin: 0, fontSize: '0.96rem', fontWeight: 900, color: '#ffffff', letterSpacing: '0.5px' }}>KSP DRISHTI</h3>
+            <div style={{ fontSize: '0.62rem', color: '#93c5fd', fontWeight: 700, marginTop: '2px', letterSpacing: '0.3px' }}>
+              Karnataka State Police • AI Command
+            </div>
           </div>
         </div>
 
-        <button className="sidebar-new-chat-btn" onClick={handleNewConversation} title="Start new conversation session">
-          <Plus size={16} /> New Conversation
-        </button>
+        {/* PRIMARY ACTIONS: NEW CONVERSATION & E-COMPLAINT */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <button 
+            ref={newChatBtnRef}
+            className="sidebar-new-chat-btn" 
+            onClick={handleNewConversation} 
+            title="Start new police intelligence session"
+          >
+            <Plus size={16} /> New Conversation
+          </button>
 
-        {/* CHATGPT STYLE RECENT SAVED SESSIONS HISTORY PANEL */}
-        <div className="sidebar-section" style={{ marginTop: 'auto', flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: '140px' }}>
+          {/* DEDICATED E-COMPLAINT FILING ACTION */}
+          <button 
+            className="sidebar-ecomplaint-btn" 
+            onClick={() => setShowComplaintPortal(true)} 
+            title="Open Karnataka State Police Official Citizen e-Complaint & FIR Filing Portal"
+            style={{
+              background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.22) 0%, rgba(185, 28, 28, 0.35) 100%)',
+              border: '1.5px solid rgba(248, 113, 113, 0.45)',
+              borderRadius: '10px',
+              padding: '10px 14px',
+              fontSize: '0.82rem',
+              fontWeight: 700,
+              color: '#ffffff',
+              letterSpacing: '0.3px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '8px',
+              transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
+              boxShadow: '0 4px 16px rgba(220, 38, 38, 0.22)',
+              backdropFilter: 'blur(8px)'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)';
+              e.currentTarget.style.transform = 'translateY(-1px)';
+              e.currentTarget.style.boxShadow = '0 6px 22px rgba(239, 68, 68, 0.45)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'linear-gradient(135deg, rgba(239, 68, 68, 0.22) 0%, rgba(185, 28, 28, 0.35) 100%)';
+              e.currentTarget.style.transform = 'translateY(0)';
+              e.currentTarget.style.boxShadow = '0 4px 16px rgba(220, 38, 38, 0.22)';
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <ShieldAlert size={16} style={{ color: '#fca5a5' }} />
+              <span>File e-Complaint</span>
+            </div>
+            <span style={{ 
+              fontSize: '0.58rem', 
+              background: 'rgba(255, 255, 255, 0.22)', 
+              color: '#ffffff', 
+              padding: '2px 6px', 
+              borderRadius: '4px',
+              fontWeight: 800,
+              letterSpacing: '0.4px'
+            }}>
+              CITIZEN FIR
+            </span>
+          </button>
+
+          {/* POLICE-INITIATED COMPLAINT / SUO MOTO FIR ACTION */}
+          <button 
+            className="sidebar-police-complaint-btn" 
+            onClick={() => setShowPoliceComplaintPortal(true)} 
+            title="Open Karnataka Police Duty Patrol & Suo Moto FIR Console (BNSS Sec 105)"
+            style={{
+              background: 'linear-gradient(135deg, rgba(30, 58, 138, 0.45) 0%, rgba(3, 86, 197, 0.55) 100%)',
+              border: '1.5px solid rgba(96, 165, 250, 0.55)',
+              borderRadius: '10px',
+              padding: '10px 14px',
+              fontSize: '0.82rem',
+              fontWeight: 700,
+              color: '#ffffff',
+              letterSpacing: '0.3px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '8px',
+              transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
+              boxShadow: '0 4px 16px rgba(3, 86, 197, 0.28)',
+              backdropFilter: 'blur(8px)'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'linear-gradient(135deg, #1d4ed8 0%, #0356C5 100%)';
+              e.currentTarget.style.transform = 'translateY(-1px)';
+              e.currentTarget.style.boxShadow = '0 6px 22px rgba(3, 86, 197, 0.55)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'linear-gradient(135deg, rgba(30, 58, 138, 0.45) 0%, rgba(3, 86, 197, 0.55) 100%)';
+              e.currentTarget.style.transform = 'translateY(0)';
+              e.currentTarget.style.boxShadow = '0 4px 16px rgba(3, 86, 197, 0.28)';
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Radio size={16} style={{ color: '#93c5fd' }} />
+              <span>Police-Initiated FIR</span>
+            </div>
+            <span style={{ 
+              fontSize: '0.58rem', 
+              background: 'rgba(96, 165, 250, 0.3)', 
+              color: '#e0f2fe', 
+              padding: '2px 6px', 
+              borderRadius: '4px',
+              fontWeight: 800,
+              letterSpacing: '0.4px',
+              border: '1px solid rgba(147, 197, 253, 0.4)'
+            }}>
+              SUO MOTO
+            </span>
+          </button>
+
+          {/* PASSPORT VERIFICATION / PVR CLEARANCE ACTION */}
+          <button 
+            className="sidebar-passport-btn" 
+            onClick={() => setShowPassportPortal(true)} 
+            title="Open Karnataka State Police Passport Verification (PVR) & Clearance Portal"
+            style={{
+              background: 'linear-gradient(135deg, rgba(2, 132, 199, 0.28) 0%, rgba(3, 86, 197, 0.45) 100%)',
+              border: '1.5px solid rgba(56, 189, 248, 0.55)',
+              borderRadius: '10px',
+              padding: '10px 14px',
+              fontSize: '0.82rem',
+              fontWeight: 700,
+              color: '#ffffff',
+              letterSpacing: '0.3px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '8px',
+              transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
+              boxShadow: '0 4px 16px rgba(2, 132, 199, 0.25)',
+              backdropFilter: 'blur(8px)'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'linear-gradient(135deg, #0284c7 0%, #0356C5 100%)';
+              e.currentTarget.style.transform = 'translateY(-1px)';
+              e.currentTarget.style.boxShadow = '0 6px 22px rgba(2, 132, 199, 0.55)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'linear-gradient(135deg, rgba(2, 132, 199, 0.28) 0%, rgba(3, 86, 197, 0.45) 100%)';
+              e.currentTarget.style.transform = 'translateY(0)';
+              e.currentTarget.style.boxShadow = '0 4px 16px rgba(2, 132, 199, 0.25)';
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Globe size={16} style={{ color: '#7dd3fc' }} />
+              <span>Passport Verification</span>
+            </div>
+            <span style={{ 
+              fontSize: '0.58rem', 
+              background: 'rgba(56, 189, 248, 0.3)', 
+              color: '#e0f2fe', 
+              padding: '2px 6px', 
+              borderRadius: '4px',
+              fontWeight: 800,
+              letterSpacing: '0.4px',
+              border: '1px solid rgba(125, 211, 252, 0.45)'
+            }}>
+              PVR / NOC
+            </span>
+          </button>
+
+          {/* REGISTERED CASES / ALL COMPLAINT RECORDS ACTION */}
+          <button 
+            className="sidebar-registered-cases-btn" 
+            onClick={() => setShowRegisteredCasesModal(true)} 
+            title="Open Master List of all Registered Citizen e-Complaints and Police Suo Moto FIRs"
+            style={{
+              background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.22) 0%, rgba(3, 86, 197, 0.45) 100%)',
+              border: '1.5px solid rgba(52, 211, 153, 0.55)',
+              borderRadius: '10px',
+              padding: '10px 14px',
+              fontSize: '0.82rem',
+              fontWeight: 700,
+              color: '#ffffff',
+              letterSpacing: '0.3px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '8px',
+              transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
+              boxShadow: '0 4px 16px rgba(16, 185, 129, 0.20)',
+              backdropFilter: 'blur(8px)'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'linear-gradient(135deg, #059669 0%, #0356C5 100%)';
+              e.currentTarget.style.transform = 'translateY(-1px)';
+              e.currentTarget.style.boxShadow = '0 6px 22px rgba(16, 185, 129, 0.45)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'linear-gradient(135deg, rgba(16, 185, 129, 0.22) 0%, rgba(3, 86, 197, 0.45) 100%)';
+              e.currentTarget.style.transform = 'translateY(0)';
+              e.currentTarget.style.boxShadow = '0 4px 16px rgba(16, 185, 129, 0.20)';
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Layers size={16} style={{ color: '#6ee7b7' }} />
+              <span>Registered Case Records</span>
+            </div>
+            <span style={{ 
+              fontSize: '0.58rem', 
+              background: 'rgba(52, 211, 153, 0.3)', 
+              color: '#ecfdf5', 
+              padding: '2px 6px', 
+              borderRadius: '4px',
+              fontWeight: 800,
+              letterSpacing: '0.4px',
+              border: '1px solid rgba(110, 231, 183, 0.45)'
+            }}>
+              DATASTORE
+            </span>
+          </button>
+        </div>
+
+        {/* KSP INCIDENT SESSIONS HISTORY PANEL */}
+        <div className="sidebar-section" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: '160px' }}>
           <div className="sidebar-section-title" style={{ justifyContent: 'space-between', marginBottom: '6px' }}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: '5px', color: '#94a3b8' }}>
-              <History size={13} style={{ color: '#60a5fa' }} /> RECENT SESSIONS ({savedSessions.length})
+            <span style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#93c5fd', fontWeight: 800, fontSize: '0.68rem' }}>
+              <History size={13} style={{ color: '#60a5fa' }} /> INCIDENT SESSIONS ({savedSessions.length})
             </span>
             {savedSessions.length > 0 && (
               <button 
                 onClick={handleClearAllSessions}
-                style={{ background: 'transparent', color: '#ef4444', border: 'none', fontSize: '0.62rem', fontWeight: 800, cursor: 'pointer' }}
+                style={{ 
+                  background: 'rgba(239, 68, 68, 0.18)', 
+                  color: '#f87171', 
+                  border: '1px solid rgba(239, 68, 68, 0.35)', 
+                  borderRadius: '4px',
+                  padding: '2px 6px',
+                  fontSize: '0.60rem', 
+                  fontWeight: 700, 
+                  cursor: 'pointer' 
+                }}
                 title="Clear all saved sessions"
               >
                 Clear All
@@ -1581,38 +1922,46 @@ function Chatbot({ onAddDocument, divisionName = "Bengaluru Division", onClose }
             )}
           </div>
 
-          <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '4px', paddingRight: '2px' }}>
+          <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px', paddingRight: '2px' }}>
             {savedSessions.length === 0 ? (
-              <div style={{ fontSize: '0.68rem', color: '#64748b', fontStyle: 'italic', padding: '6px 4px' }}>
-                No saved chat sessions. Ask a query and click "+ New Conversation" to save.
+              <div style={{ 
+                fontSize: '0.72rem', 
+                color: '#93c5fd', 
+                background: 'rgba(15, 23, 42, 0.65)', 
+                border: '1.5px dashed rgba(96, 165, 250, 0.3)', 
+                borderRadius: '8px', 
+                padding: '14px 10px', 
+                textAlign: 'center',
+                lineHeight: '1.4'
+              }}>
+                🛡️ No active incident sessions.<br />
+                <span style={{ fontSize: '0.62rem', color: '#60a5fa' }}>Queries auto-archive here for official record.</span>
               </div>
             ) : (
               savedSessions.map((session) => (
                 <div
                   key={session.id}
                   onClick={() => handleLoadSession(session)}
-                  style={{
-                    background: activeSessionId === session.id ? 'rgba(37, 99, 235, 0.35)' : 'rgba(30, 41, 59, 0.7)',
-                    border: activeSessionId === session.id ? '1px solid #3b82f6' : '1px solid rgba(255, 255, 255, 0.08)',
-                    borderRadius: '8px',
-                    padding: '7px 9px',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: '6px',
-                    transition: 'all 0.15s ease'
-                  }}
-                  title={`Click to view: ${session.title}`}
+                  className={`ksp-session-card ${activeSessionId === session.id ? 'active' : ''}`}
+                  title={`Click to open session: ${session.title}`}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden', flex: 1 }}>
-                    <MessageSquare size={13} style={{ color: activeSessionId === session.id ? '#60a5fa' : '#94a3b8', flexShrink: 0 }} />
+                    <MessageSquare size={14} style={{ color: activeSessionId === session.id ? '#38bdf8' : '#60a5fa', flexShrink: 0 }} />
                     <div style={{ overflow: 'hidden', flex: 1 }}>
-                      <div style={{ fontSize: '0.72rem', fontWeight: 700, color: activeSessionId === session.id ? '#ffffff' : '#cbd5e1', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {session.title || 'Conversation Session'}
+                      <div style={{ 
+                        fontSize: '0.74rem', 
+                        fontWeight: 700, 
+                        color: activeSessionId === session.id ? '#ffffff' : '#f1f5f9', 
+                        whiteSpace: 'nowrap', 
+                        overflow: 'hidden', 
+                        textOverflow: 'ellipsis' 
+                      }}>
+                        {session.title || 'Incident Session'}
                       </div>
-                      <div style={{ fontSize: '0.58rem', color: '#64748b', marginTop: '1px' }}>
-                        {session.dateStr || 'Saved'} • {session.messages?.length || 0} msgs
+                      <div style={{ fontSize: '0.60rem', color: '#94a3b8', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <span>{session.dateStr || 'Recent'}</span>
+                        <span>•</span>
+                        <span style={{ color: '#38bdf8', fontWeight: 700 }}>{session.messages?.length || 0} msgs</span>
                       </div>
                     </div>
                   </div>
@@ -1622,17 +1971,18 @@ function Chatbot({ onAddDocument, divisionName = "Bengaluru Division", onClose }
                     style={{
                       background: 'transparent',
                       border: 'none',
-                      color: '#94a3b8',
+                      color: '#64748b',
                       cursor: 'pointer',
-                      padding: '2px 4px',
+                      padding: '3px',
                       borderRadius: '4px',
                       display: 'flex',
                       alignItems: 'center',
-                      flexShrink: 0
+                      flexShrink: 0,
+                      transition: 'all 0.15s ease'
                     }}
-                    title="Delete this session"
-                    onMouseEnter={(e) => e.currentTarget.style.color = '#ef4444'}
-                    onMouseLeave={(e) => e.currentTarget.style.color = '#94a3b8'}
+                    title="Delete session"
+                    onMouseEnter={(e) => { e.currentTarget.style.color = '#ef4444'; e.currentTarget.style.background = 'rgba(239, 68, 68, 0.2)'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.color = '#64748b'; e.currentTarget.style.background = 'transparent'; }}
                   >
                     <Trash2 size={12} />
                   </button>
@@ -1641,6 +1991,8 @@ function Chatbot({ onAddDocument, divisionName = "Bengaluru Division", onClose }
             )}
           </div>
         </div>
+
+
       </div>
 
       {/* MAIN CHAT CANVAS (Light White Theme like 2nd image) */}
@@ -1648,59 +2000,13 @@ function Chatbot({ onAddDocument, divisionName = "Bengaluru Division", onClose }
         <div id="view-chat">
           {/* Top KSP Official Header Toolbar */}
           <div className="chat-guardrail" style={{ justifyContent: 'space-between', padding: '10px 20px', gap: '8px', flexWrap: 'wrap', background: '#ffffff', borderBottom: '1px solid #e2e8f0' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <img src="/ksp_police_logo.png" alt="KSP Logo" style={{ width: 20, height: 20 }} />
-              <span style={{ fontWeight: 800, color: '#1e3a8a', fontSize: '0.88rem' }}>
-                DRUSHTI AI — {divisionName || 'State HQ'}
-              </span>
-
-              {/* ACTIVE FIR CASE WORKSPACE SELECTOR */}
-              <div style={{
-                display: 'flex', alignItems: 'center', gap: '6px',
-                background: '#f8fafc', border: '1px solid #cbd5e1',
-                borderRadius: '8px', padding: '2px 8px', marginLeft: '6px'
-              }}>
-                <FolderKanban size={13} style={{ color: '#2563eb' }} />
-                <span style={{ fontSize: '0.68rem', fontWeight: 800, color: '#1e3a8a' }}>Active FIR Context:</span>
-                <select
-                  value={selectedFir}
-                  onChange={(e) => setSelectedFir(e.target.value)}
-                  style={{
-                    fontSize: '0.68rem', fontWeight: 700, background: 'white',
-                    border: '1px solid #cbd5e1', borderRadius: '6px', padding: '2px 6px',
-                    color: selectedFir ? '#1d4ed8' : '#64748b', cursor: 'pointer'
-                  }}
-                >
-                  <option value="">-- All Stations / General Context --</option>
-                  <optgroup label="🔵 Bengaluru Division Stations">
-                    <option value="FIR-187/2026-d91c">FIR-187/2026-d91c (Cheating - Malleswaram PS)</option>
-                    <option value="FIR-623/2025-a466">FIR-623/2025-a466 (Robbery - Malleswaram PS)</option>
-                    <option value="FIR-392/2026-e99d">FIR-392/2026-e99d (Theft - Tumakuru Town PS)</option>
-                    <option value="FIR-502/2025-a39c">FIR-502/2025-a39c (Cheating - Tumakuru Town PS)</option>
-                    <option value="FIR-918/2025-1e99">FIR-918/2025-1e99 (Robbery - Koramangala PS)</option>
-                  </optgroup>
-                  <optgroup label="🟣 Mysuru Division Stations">
-                    <option value="FIR-936/2025-f20d">FIR-936/2025-f20d (Cyber Crime - Kuvempunagar PS)</option>
-                    <option value="FIR-883/2025-9372">FIR-883/2025-9372 (Theft - Saraswathipuram PS)</option>
-                    <option value="FIR-632/2025-ed77">FIR-632/2025-ed77 (Theft - Kuvempunagar PS)</option>
-                    <option value="FIR-609/2025-6bae">FIR-609/2025-6bae (Assault - Devaraja PS)</option>
-                  </optgroup>
-                  <optgroup label="🟢 Belagavi Division Stations">
-                    <option value="FIR-698/2026-84ab">FIR-698/2026-84ab (Cheating - Tilakwadi PS)</option>
-                    <option value="FIR-472/2026-23d2">FIR-472/2026-23d2 (Theft - Tilakwadi PS)</option>
-                    <option value="FIR-666/2025-fd4a">FIR-666/2025-fd4a (NDPS - Khadebazar PS)</option>
-                  </optgroup>
-                  <optgroup label="🟡 Kalaburagi Division Stations">
-                    <option value="FIR-881/2026-058b">FIR-881/2026-058b (Cyber Crime - Vidyanagar PS)</option>
-                    <option value="FIR-809/2026-a581">FIR-809/2026-a581 (Cheating - Dharwad Suburban PS)</option>
-                  </optgroup>
-                </select>
-                {selectedFir && (
-                  <span style={{ fontSize: '0.6rem', background: '#dbeafe', color: '#1e40af', padding: '1px 5px', borderRadius: '4px', fontWeight: 800 }}>
-                    ACTIVE CASE
-                  </span>
-                )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div style={{ width: '30px', height: '30px', borderRadius: '8px', background: '#02060E', border: '1px solid rgba(30, 58, 138, 0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', boxShadow: '0 2px 6px rgba(0,0,0,0.18)' }}>
+                <img src="/ksp_emblem.png" alt="Karnataka State Police Official Emblem" style={{ width: '25px', height: '25px', objectFit: 'contain' }} />
               </div>
+              <span style={{ fontWeight: 900, color: '#1e3a8a', fontSize: '0.94rem', letterSpacing: '0.3px' }}>
+                <b>KSP DRISHTI</b> <span style={{ color: '#64748b', fontWeight: 600, fontSize: '0.86rem' }}>— {divisionName || 'State HQ'}</span>
+              </span>
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -1842,7 +2148,7 @@ function Chatbot({ onAddDocument, divisionName = "Bengaluru Division", onClose }
             {messages.length <= 1 && (
               <div style={{ textAlign: 'left', padding: '8px 4px 12px 4px', animation: 'bubble-slide-up 0.4s ease-out' }}>
                 <div style={{ fontSize: '1.2rem', fontWeight: 900, color: '#1e3a8a', display: 'flex', alignItems: 'center', gap: '8px', lineHeight: 1.2 }}>
-                  <ShieldCheck size={22} style={{ color: '#2563eb' }} /> Sentinel Command Assistant,
+                  <ShieldCheck size={22} style={{ color: '#2563eb' }} /> KSP DRISHTI,
                 </div>
                 <div style={{ fontSize: '0.88rem', color: '#475569', fontWeight: 700, marginTop: '2px' }}>
                   Karnataka State Police Command Intelligence platform active for {divisionName || 'State HQ'}.
@@ -1870,7 +2176,7 @@ function Chatbot({ onAddDocument, divisionName = "Bengaluru Division", onClose }
                         color: '#1e3a8a',
                       }}>
                         <span style={{ fontSize: '0.75rem' }}>{m.agent_icon || '🛡️'}</span>
-                        {m.agent_label || 'Sentinel Command Assistant'}
+                        {m.agent_label || 'KSP DRISHTI'}
                       </div>
                     </div>
                   </div>
@@ -2119,15 +2425,17 @@ function Chatbot({ onAddDocument, divisionName = "Bengaluru Division", onClose }
         </div>
 
           {/* KSP INPUT AREA */}
-          <div className="chat-input-area" style={{ padding: '12px 32px 20px 32px', background: '#f8fafc', borderTop: '1px solid #e2e8f0' }}>
+          <div className="chat-input-area" style={{ padding: '12px 32px 20px 32px', background: 'transparent', borderTop: 'none' }}>
             <div className="ksp-input-container" style={{
               display: 'flex',
               alignItems: 'center',
-              background: '#ffffff',
-              borderRadius: '20px',
+              background: 'rgba(255, 255, 255, 0.85)',
+              backdropFilter: 'blur(24px) saturate(200%)',
+              WebkitBackdropFilter: 'blur(24px) saturate(200%)',
+              borderRadius: '24px',
               padding: '6px 10px 6px 14px',
-              border: '1.5px solid #cbd5e1',
-              boxShadow: '0 6px 20px rgba(15,23,42,0.08)',
+              border: '1.5px solid rgba(255, 255, 255, 0.95)',
+              boxShadow: '0 12px 40px rgba(3, 86, 197, 0.12), inset 0 1px 2px rgba(255, 255, 255, 0.9)',
               transition: 'all 0.2s',
               maxWidth: '960px',
               margin: '0 auto'
@@ -2137,12 +2445,12 @@ function Chatbot({ onAddDocument, divisionName = "Bengaluru Division", onClose }
             type="button"
             onClick={toggleVoiceListen}
             style={{
-              background: isListening ? '#ef4444' : '#f1f5f9',
-              color: isListening ? 'white' : '#2563eb',
+              background: isListening ? '#ef4444' : 'rgba(3, 86, 197, 0.08)',
+              color: isListening ? 'white' : '#0356C5',
               border: 'none',
-              borderRadius: '8px',
-              width: '28px',
-              height: '28px',
+              borderRadius: '10px',
+              width: '30px',
+              height: '30px',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -2155,18 +2463,18 @@ function Chatbot({ onAddDocument, divisionName = "Bengaluru Division", onClose }
             {isListening ? <MicOff size={15} /> : <Mic size={15} />}
           </button>
 
-          {/* + OPTIONS MENU BUTTON (MATCHING USER SCREENSHOT) */}
+          {/* + OPTIONS MENU BUTTON */}
           <div style={{ position: 'relative', display: 'inline-block', marginRight: '6px' }}>
             <button
               type="button"
               onClick={() => setShowPlusMenu(!showPlusMenu)}
               style={{
-                background: showPlusMenu ? '#2563eb' : '#f1f5f9',
-                color: showPlusMenu ? 'white' : '#475569',
-                border: '1px solid #cbd5e1',
-                borderRadius: '8px',
-                width: '28px',
-                height: '28px',
+                background: showPlusMenu ? '#0356C5' : 'rgba(3, 86, 197, 0.08)',
+                color: showPlusMenu ? 'white' : '#0356C5',
+                border: '1px solid rgba(186, 230, 253, 0.8)',
+                borderRadius: '10px',
+                width: '30px',
+                height: '30px',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -2178,98 +2486,79 @@ function Chatbot({ onAddDocument, divisionName = "Bengaluru Division", onClose }
               <Plus size={16} style={{ transform: showPlusMenu ? 'rotate(45deg)' : 'none', transition: 'transform 0.2s' }} />
             </button>
 
-            {/* POPUP OPTIONS DROPDOWN MENU */}
+            {/* POPUP OPTIONS DROPDOWN MENU (Fluid Crystal Sapphire Glass) */}
             {showPlusMenu && (
               <div 
                 style={{
                   position: 'absolute',
-                  bottom: '36px',
+                  bottom: '42px',
                   left: '0',
-                  width: '240px',
-                  background: 'linear-gradient(145deg, #1e293b 0%, #0f172a 100%)',
-                  border: '1px solid #334155',
-                  borderRadius: '12px',
-                  boxShadow: '0 20px 35px rgba(0, 0, 0, 0.4)',
-                  padding: '6px',
+                  width: '260px',
+                  background: 'rgba(255, 255, 255, 0.92)',
+                  backdropFilter: 'blur(24px) saturate(200%)',
+                  WebkitBackdropFilter: 'blur(24px) saturate(200%)',
+                  border: '1.5px solid rgba(255, 255, 255, 0.95)',
+                  borderRadius: '16px',
+                  boxShadow: '0 16px 40px rgba(3, 86, 197, 0.18)',
+                  padding: '8px',
                   zIndex: 9999,
                   animation: 'bubble-slide-up 0.15s ease-out',
-                  color: '#f8fafc'
+                  color: '#022c68'
                 }}
               >
-                {/* Option 1: Add files or photos */}
+                {/* Option 1: Upload Document / Photo to KSP RAG Pipeline */}
                 <div 
                   onClick={() => {
                     setShowPlusMenu(false);
-                    const fileInput = document.getElementById('chat-input-file-btn');
-                    if (fileInput) fileInput.click();
+                    triggerRagUpload();
                   }}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
-                    padding: '8px 10px',
-                    borderRadius: '8px',
+                    padding: '9px 12px',
+                    borderRadius: '10px',
                     fontSize: '0.78rem',
-                    fontWeight: 600,
-                    color: '#f1f5f9',
+                    fontWeight: 700,
+                    color: '#03214c',
                     cursor: 'pointer',
-                    transition: 'background 0.15s'
+                    transition: 'all 0.15s ease'
                   }}
                   className="popup-menu-item"
+                  onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(3, 86, 197, 0.08)'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <Paperclip size={14} style={{ color: '#38bdf8' }} />
-                    <span>Add files or photos</span>
+                    <Paperclip size={15} style={{ color: '#0356C5' }} />
+                    <span>Upload Case Document (RAG)</span>
                   </div>
-                  <span style={{ fontSize: '0.62rem', color: '#64748b', background: '#334155', padding: '1px 5px', borderRadius: '4px' }}>Ctrl+U</span>
+                  <span style={{ fontSize: '0.60rem', color: '#0356C5', background: 'rgba(3, 86, 197, 0.1)', border: '1px solid rgba(3, 86, 197, 0.25)', padding: '1px 6px', borderRadius: '4px', fontWeight: 800 }}>RAG AI</span>
                 </div>
 
-                {/* Option 2: Add Database Connector (Relational / NoSQL) */}
+                {/* Option 2: Add Database Connector */}
                 <div 
                   onClick={() => { setShowPlusMenu(false); setShowDbModal(true); }}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
-                    padding: '8px 10px',
-                    borderRadius: '8px',
+                    padding: '9px 12px',
+                    borderRadius: '10px',
                     fontSize: '0.78rem',
-                    fontWeight: 600,
-                    color: '#f1f5f9',
+                    fontWeight: 700,
+                    color: '#03214c',
                     cursor: 'pointer',
-                    transition: 'background 0.15s'
+                    transition: 'all 0.15s ease'
                   }}
                   className="popup-menu-item"
+                  onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(3, 86, 197, 0.08)'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <Database size={14} style={{ color: '#a855f7' }} />
-                    <span>Add connector (SQL/NoSQL)</span>
+                    <Database size={15} style={{ color: '#0284c7' }} />
+                    <span>Connect Case DB (SQL/NoSQL)</span>
                   </div>
-                  <ChevronRight size={13} style={{ color: '#64748b' }} />
-                </div>
-
-                {/* Option 3: Add Knowledge Document */}
-                <div 
-                  onClick={() => { setShowPlusMenu(false); triggerRagUpload(); }}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '8px 10px',
-                    borderRadius: '8px',
-                    fontSize: '0.78rem',
-                    fontWeight: 600,
-                    color: '#f1f5f9',
-                    cursor: 'pointer',
-                    transition: 'background 0.15s'
-                  }}
-                  className="popup-menu-item"
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <FolderPlus size={14} style={{ color: '#34d399' }} />
-                    <span>Add to RAG project</span>
-                  </div>
-                  <ChevronRight size={13} style={{ color: '#64748b' }} />
+                  <ChevronRight size={13} style={{ color: '#0356C5' }} />
                 </div>
               </div>
             )}
@@ -2300,9 +2589,10 @@ function Chatbot({ onAddDocument, divisionName = "Bengaluru Division", onClose }
               flex: 1,
               border: 'none',
               outline: 'none',
-              fontSize: '0.82rem',
+              fontSize: '0.84rem',
               background: 'transparent',
-              color: '#0f172a'
+              color: '#03214c',
+              fontWeight: 500
             }}
           />
 
@@ -2311,23 +2601,47 @@ function Chatbot({ onAddDocument, divisionName = "Bengaluru Division", onClose }
             className="chat-send-btn" 
             onClick={() => handleSend()}
             style={{
-              background: '#2563eb',
+              background: 'linear-gradient(135deg, #0356C5 0%, #0284c7 100%)',
               border: 'none',
               color: 'white',
-              borderRadius: '10px',
-              width: '32px',
-              height: '32px',
+              borderRadius: '12px',
+              width: '34px',
+              height: '34px',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               cursor: 'pointer',
-              boxShadow: '0 2px 8px rgba(37,99,235,0.3)'
+              boxShadow: '0 4px 16px rgba(3, 86, 197, 0.38)'
             }}
           >
             <Send size={15} />
           </button>
         </div>
       </div>
+
+      {/* E-COMPLAINT & FIR FILING PORTAL MODAL */}
+      {showComplaintPortal && (
+        <ComplaintPortal onClose={() => setShowComplaintPortal(false)} />
+      )}
+
+      {/* POLICE-INITIATED COMPLAINT & SUO MOTO FIR CONSOLE MODAL */}
+      {showPoliceComplaintPortal && (
+        <PoliceInitiatedComplaintPortal onClose={() => setShowPoliceComplaintPortal(false)} />
+      )}
+
+      {/* PASSPORT VERIFICATION & PVR CLEARANCE PORTAL MODAL */}
+      {showPassportPortal && (
+        <PassportVerificationPortal onClose={() => setShowPassportPortal(false)} />
+      )}
+
+      {/* REGISTERED CASES MASTER LOG MODAL (CITIZEN e-FIRs + POLICE SUO MOTO CASES) */}
+      {showRegisteredCasesModal && (
+        <RegisteredCasesModal
+          onClose={() => setShowRegisteredCasesModal(false)}
+          onOpenEComplaint={() => setShowComplaintPortal(true)}
+          onOpenPoliceComplaint={() => setShowPoliceComplaintPortal(true)}
+        />
+      )}
 
       {/* INTERACTIVE CHART ANALYSIS MODAL */}
       <ChartAnalysisModal

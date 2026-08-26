@@ -13,6 +13,17 @@ export default defineConfig({
       '/api': {
         target: 'http://127.0.0.1:5000',
         changeOrigin: true
+      },
+      '/catalyst-api': {
+        target: 'https://kspcrimeintelligenceplatform-60077159195.development.catalystserverless.in',
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path.replace(/^\/catalyst-api/, '')
+      },
+      '/server': {
+        target: 'https://kspcrimeintelligenceplatform-60077159195.development.catalystserverless.in',
+        changeOrigin: true,
+        secure: false
       }
     }
   }
