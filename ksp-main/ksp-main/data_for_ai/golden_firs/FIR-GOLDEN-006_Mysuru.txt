@@ -1,0 +1,5 @@
+FIR Number: FIR-2025-MYS-006
+Division: Mysuru City
+Date: 2025-08-09
+Crime Category: Extortion
+Narrative: Local gang demanding protection money from heritage hotel owners. Suspects strictly communicate using the encrypted Signal app to avoid interception. Physical threats are delivered by dropping threatening letters wrapped in a red cloth at the hotel reception.

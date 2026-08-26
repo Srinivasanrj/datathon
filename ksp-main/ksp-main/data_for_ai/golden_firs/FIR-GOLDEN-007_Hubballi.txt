@@ -1,0 +1,5 @@
+FIR Number: FIR-2025-HUB-007
+Division: Hubballi Dharwad City
+Date: 2025-01-20
+Crime Category: ATM Robbery
+Narrative: Recent ATM robbery reported at Vidyanagar. The Modus Operandi matches a known 2022 Mysuru gang. The suspects used an acetylene torch to cut the vault, leaving identical cut marks on the lower hinge. The robbery was executed precisely at 03:00 AM.

@@ -1,0 +1,5 @@
+FIR Number: FIR-2025-BLR-002
+Division: Bengaluru City
+Date: 2025-05-18
+Crime Category: Cyber Crime / Fraud
+Narrative: Victim lured into a cryptocurrency investment scheme via the Telegram app. After transferring digital assets, the suspects convinced the victim to physically hand over INR 5 Lakhs cash at a cafe in Koramangala. CCTV footage shows the suspect arriving on a scooter, using a Swiggy delivery bag as a decoy to collect the cash unnoticed.

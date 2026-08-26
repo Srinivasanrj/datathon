@@ -1,0 +1,44 @@
+# Dynamic Multi-Agent Orchestration Upgrade
+
+Currently, the KSP Sentinel AI uses a "Single-Choice Router" architecture. The Supervisor looks at a query and picks exactly **one** agent (e.g., Analytics *or* Document). If a user asks a complex question like *"How many cyber crimes happened in 2024, and what is the standard procedure for handling them?"*, the Supervisor is forced to pick only one, missing half of the user's intent.
+
+This implementation plan upgrades the Supervisor into a true **Dynamic Orchestrator** capable of triggering multiple agents for a single query.
+
+## Proposed Changes
+
+### 1. Update the Supervisor Prompt (`routes.py`)
+- **[MODIFY] `routes.py`**
+  - Change `SUPERVISOR_ROUTER_PROMPT` to instruct the LLM to return a JSON array of required agents rather than a single string.
+  - The LLM will define a `purpose` for why it chose each agent.
+  - *Example output:* `{"agents": [{"name": "analytics_agent", "purpose": "To get 2024 crime counts"}, {"name": "document_agent", "purpose": "To retrieve the SOP for cyber crimes"}]}`
+
+### 2. Refactor the Execution Loop (`routes.py`)
+- **[MODIFY] `routes.py` (`chat` function)**
+  - Remove the rigid `if/elif/else` block that forces a single agent execution.
+  - Replace it with a dynamic loop over the `agent_routing['agents']` list.
+  - **Analytics Agent**: If selected, execute text-to-SQL to fetch `rows` and `chart_data`.
+  - **Document Agent**: If selected, execute Semantic Vector Search to fetch `rag_results`.
+  - **Pattern Agent**: If selected, execute unstructured pattern matching.
+
+### 3. Add a Synthesis Layer (`llm.py`)
+- **[MODIFY] `llm.py`**
+  - If multiple agents return data (e.g., SQL records + RAG passages), we cannot just append them blindly. We will add a new `synthesize_multi_agent_answer(query, sql_rows, rag_results, ...)` function.
+  - This function will call the Catalyst GLM model, passing it *all* the collected intelligence from the various sub-agents, and ask it to write one cohesive, unified response answering all parts of the user's prompt.
+
+### 4. UI / Response Payload Adjustments (`routes.py`)
+- **[MODIFY] `routes.py`**
+  - Update the returned JSON payload so the frontend knows that multiple agents were invoked. We will pass back an array of triggered agents so the UI can display badges like "📊 Analytics Agent + 📄 Document Agent".
+
+## User Review Required
+
+> [!WARNING]
+> **Performance Implication:** Triggering multiple agents (e.g., generating SQL, doing Vector Search, and then running a final Synthesis LLM call) will slightly increase the response time for complex questions (maybe +3 to +5 seconds). Are you comfortable with this tradeoff for the sake of deeper intelligence?
+
+> [!TIP]
+> **Synthesis LLM Call:** For the final response generation, I plan to use the Zoho Catalyst GLM API to merge the SQL rows and RAG passages. Is this acceptable?
+
+## Verification Plan
+
+1. Ask a pure analytics question: *"Count the murders."* -> Verify only 1 agent triggers.
+2. Ask a pure document question: *"What is a Zero FIR?"* -> Verify only 1 agent triggers.
+3. Ask a complex question: *"Compare the number of cyber crime cases in 2024 vs 2025 and tell me the standard procedure for investigating them."* -> Verify the Supervisor triggers **both** Analytics and Document agents, and the final response seamlessly blends the database counts with the procedural text.

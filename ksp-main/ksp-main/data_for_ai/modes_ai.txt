@@ -1,0 +1,25 @@
+You're conflating three distinct *output modes* into a single agent — that's operationally fine, but each needs a hard trigger, otherwise every response tries to serve all three and serves none well `[Certain]`.
+
+Here's how I'll implement them:
+
+---
+
+### Mode 1 — **Project Documentarian** `[SCRIBE]`
+**Trigger:** When you say "document this," "add to roadmap," or ask what the plan is.
+**Output:** A living `project_roadmap.md` artifact — scope, decisions made, what's pending, what changed and why. One-line items. No essays.
+
+---
+
+### Mode 2 — **Evaluation Reviewer** `[EVAL]`
+**Trigger:** When you share test results, metrics output, error logs, or say "review this output."
+**Output:** A Mode 2 review artifact per the advisor spec — what passed, what failed, root-cause hypotheses, alternative angles, verdict. No re-running the same failed approach.
+
+---
+
+### Mode 3 — **Karnataka Police Officer (Client Viewer)** `[KSP-CLIENT]`
+**Trigger:** When you say "view as officer," "police perspective," or "client review."
+**Output:** Operational assessment — does this UI/feature make sense to a constable or DSP on duty at 2 AM with no time to read manuals? Flags confusion points, missing workflows, terminology mismatches with how Karnataka Police actually operates. `[Speculative: I don't have insider KSP SOP access — gaps will be tagged]`
+
+---
+
+Understood. Confirm which one you want me to activate first, or give me the first input and I'll detect the mode from context.

@@ -1,0 +1,5 @@
+FIR Number: FIR-2022-MYS-004
+Division: Mysuru City
+Date: 2022-11-05
+Crime Category: ATM Robbery
+Narrative: Historical record of an ATM breach. Suspects disabled the CCTV cameras with spray paint. They breached the ATM cash dispenser using an acetylene torch, leaving distinct cut marks on the lower hinge of the vault door. The incident occurred precisely at 03:00 AM. Total cash stolen was INR 12 Lakhs.

@@ -1,0 +1,253 @@
+# Phase 2 — Complete Data Layer: Ingest All Real Datasets
+## Detailed Spec for Review & Approval
+
+> Status: Awaiting Approval  
+> Rule: No code written until you approve.
+
+---
+
+## Complete Dataset Inventory (Everything Found)
+
+After scanning the entire `datathon_dataset/` directory, here is every usable file:
+
+### Tier 1 — Primary Crime Statistics (Karnataka)
+| File | Content | Rows | Use |
+|---|---|---|---|
+| `2025_data/crime_review_for_the_month_of_december_2025_9.csv` | Karnataka IPC crimes Jan-Dec 2025, subcategory breakdown. Has "current year YTD", "prev year month", "prev month", "current month" columns | 778 | **PRIMARY: KA IPC Subcategory Stats 2025** |
+| `2025_data/ka-ipc-crimes-2025.csv` | Karnataka IPC crime heads, subcategory breakdown for 2025 | 653 | KA IPC Detail 2025 |
+| `2025_data/ka-sll-crimes-2025.csv` | Karnataka Special & Local Laws crimes 2025 | 241 | KA SLL 2025 |
+| `2025_data/ka-district-wise-2025.csv` | District-wise IPC + SLL crime totals, all 36 districts, 2025 | 49 | **PRIMARY: District Totals 2025** |
+| `2025_data/ka-crimes-women-children-scssts.csv` | Crimes against Women, Children, SC/ST for 2025 | 27 | Women/Child/SC-ST 2025 |
+| `2024_data/f3dc65a9-63ae-49fd-82c4-873048e9fa7c.csv` | Karnataka IPC crimes Jan-Dec 2024, same format as 2025 review | 749 | KA IPC Detail 2024 |
+| `2024_data/2a1e057f-3b0b-42e4-ae4b-6cdb49902d31.csv` | District-wise crime totals 2024 (all 36 districts) | 51 | **PRIMARY: District Totals 2024** |
+| `2024_data/e8a7c66c-42d7-4436-936b-f55bfb157319.csv` | Karnataka IPC crime heads subcategory 2024 | 628 | KA IPC Subcategory 2024 |
+| `2024_data/3305d3ec-e701-4a9b-9fa5-35926acede1d.csv` | Crimes against Women/Children/SC-ST 2024 | 27 | Women/Child 2024 |
+| `2024_data/5bb7a3f7-8fe1-4eff-94db-c0e905301ebe.csv` | (to be confirmed) | — | Review in code |
+
+### Tier 2 — All-India City-Level Crime
+| File | Content | Rows | Use |
+|---|---|---|---|
+| `Indian_crimes_data_cities/crime_dataset_india.csv` | 40,161 individual crime incident records across 20+ Indian cities (2020-2023). Has: City, Crime Description, Victim Age, Gender, Weapon, Domain | 40,162 | **India-wide individual crime records** |
+| `cyber_crime_data/Dataset_CyberCrime_Sean.csv` | Cybercrime by city + motive (Fraud, Extortion, Sexual Exploitation, etc.) | 193 | Cyber motive analysis |
+| `city_agegroupwise_crime_metropolitian_cities/NCRB_CII-2019_Table_19B.2.csv` | Age-group wise crime in metro cities 2019 | Small | Demographic analysis |
+| `city_agegroupwise_crime_metropolitian_cities/NCRB_CII-2020_Table.No-19B.2.csv` | Age-group wise crime in metro cities 2020 | Small | Demographic analysis |
+
+### Tier 3 — Socio-Demographic (Census / Population Context)
+| File | Content | Use |
+|---|---|---|
+| `block_wise_primary_census/PCA_CDB-290*.xlsx` (29 files) | Karnataka district census data — population, literacy, gender ratio by block | Socio-demographic context for crime analysis |
+| `primary_abstract_data/RL-2900.xlsx` | Karnataka primary census abstract | Population baseline |
+| `legislative_assembly_data/*.csv` (3 files) | Constituency-level data | Geo-political context |
+
+### Tier 4 — Reference PDFs (RAG Source, not SQL)
+| Files | Content |
+|---|---|
+| `pdf_data/crime 1.pdf` through `crime 42.pdf` | KSP monthly crime review PDFs — unstructured text for RAG queries |
+| `2025_data/crime-review-december-modified-2025.pdf` | KSP Dec 2025 crime review PDF |
+| `crime_data_india/11CrimeinIndia2024-VolumeI.pdf` + Vol II, III | NCRB Crime in India 2024 national report |
+
+---
+
+## Target Database Schema (New Design)
+
+### What Gets Kept (Modified)
+```sql
+-- Keep FIR_Records — already has 1,500 real 2025 incident-level records
+-- ONLY fix: no changes to schema, but update TEXT_TO_SQL_PROMPT to use
+-- strftime('%Y', Date) instead of WHERE Year
+
+-- Keep CrimeStatistics — but clean corrupt Year values (2025.0 → 2025, delete 'October', 'September')
+```
+
+### New Tables to Create
+
+#### Table 1: `KA_DistrictCrimes`
+**Source:** `ka-district-wise-2025.csv` + `2a1e057f...csv` (2024 version)  
+**Content:** District-level IPC + SLL totals for 2024 and 2025 (all 36 Karnataka districts)
+```sql
+CREATE TABLE KA_DistrictCrimes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    year INTEGER,                  -- 2024 or 2025
+    district TEXT,                 -- 'Bengaluru City', 'Mysuru City', etc.
+    range_type TEXT,               -- 'Commissionerate', 'Central Range', etc.
+    ipc_crimes INTEGER,
+    sll_crimes INTEGER
+);
+```
+**Row count after import:** ~72 rows (36 districts × 2 years)
+
+#### Table 2: `KA_CrimeReview`
+**Source:** `crime_review_for_the_month_of_december_2025_9.csv` + `f3dc65a9...csv` (2024)  
+**Content:** State-level Karnataka IPC crime head subcategory breakdown by year. The most granular structured data.
+```sql
+CREATE TABLE KA_CrimeReview (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    year INTEGER,                  -- 2024 or 2025
+    crime_domain TEXT,             -- 'A - IPC Crime' or 'B - SLL Crime'
+    major_head TEXT,               -- 'Murder (Sec.302/303 IPC)', 'Robbery', etc.
+    minor_head TEXT,               -- 'For gain', 'Chain Snatching', etc.
+    ytd_current INTEGER,           -- Current year to date total
+    ytd_prev_year INTEGER,         -- Same period previous year
+    prev_month INTEGER,            -- Previous month count
+    current_month INTEGER          -- Current month count (Dec for 2025 file)
+);
+```
+**Row count after import:** ~1,500 rows (750 × 2 years)
+
+#### Table 3: `KA_DistrictDetailedCrimes`
+**Source:** `2024_data/2a1e057f...csv` (has 22 crime columns per district)  
+**Content:** Per-district count of Murder, Rape, Robbery, Burglary, Theft, Cyber Crime, POCSO, etc.
+```sql
+CREATE TABLE KA_DistrictDetailedCrimes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    year INTEGER,
+    district TEXT,
+    murder INTEGER,
+    attempt_to_murder INTEGER,
+    rape INTEGER,
+    dacoity INTEGER,
+    robbery INTEGER,
+    burglary_day INTEGER,
+    burglary_night INTEGER,
+    theft INTEGER,
+    riots INTEGER,
+    hurt INTEGER,
+    cyber_crime INTEGER,
+    pocso INTEGER,
+    pocso_rape INTEGER,
+    fatal_accidents INTEGER,
+    non_fatal_accidents INTEGER
+);
+```
+**Row count after import:** ~70 rows (35 districts × 2 years)
+
+#### Table 4: `India_CrimeIncidents`
+**Source:** `crime_dataset_india.csv` (40,161 rows)  
+**Content:** Individual crime incident records from 20+ Indian cities
+```sql
+CREATE TABLE India_CrimeIncidents (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    report_number TEXT,
+    date_reported TEXT,
+    date_of_occurrence TEXT,
+    time_of_occurrence TEXT,
+    city TEXT,
+    crime_code TEXT,
+    crime_description TEXT,
+    victim_age INTEGER,
+    victim_gender TEXT,
+    weapon_used TEXT,
+    crime_domain TEXT,
+    police_deployed INTEGER,
+    case_closed INTEGER          -- 1 = Yes, 0 = No
+);
+```
+**Row count after import:** 40,161
+
+#### Table 5: `CyberCrimeByCity`
+**Source:** `cyber_crime_data/Dataset_CyberCrime_Sean.csv`
+```sql
+CREATE TABLE CyberCrimeByCity (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    city TEXT,
+    personal_revenge INTEGER,
+    anger INTEGER,
+    fraud INTEGER,
+    extortion INTEGER,
+    causing_disrepute INTEGER,
+    prank INTEGER,
+    sexual_exploitation INTEGER,
+    total INTEGER
+);
+```
+**Row count:** 192
+
+#### Table 6: `KA_WomenChildCrimes`
+**Source:** `ka-crimes-women-children-scssts.csv` (2025) + 2024 equivalent
+```sql
+CREATE TABLE KA_WomenChildCrimes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    year INTEGER,
+    category TEXT,            -- 'Women', 'Children', 'SC_ST'
+    crime_type TEXT,          -- 'Rape', 'Molestation', 'Kidnapping', etc.
+    cases INTEGER
+);
+```
+
+#### Table 7: `audit_log`
+```sql
+CREATE TABLE audit_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp TEXT,
+    user_id TEXT DEFAULT 'officer',
+    query_text TEXT,
+    agent_type TEXT,
+    sql_generated TEXT,
+    response_ms INTEGER
+);
+```
+
+---
+
+## Updated TEXT_TO_SQL_PROMPT — Table Routing Rules
+
+```
+ROUTING RULES (MANDATORY — pick table BEFORE writing SQL):
+
+IF query mentions district/city name (Bengaluru, Mysuru, Hubballi, etc.)
+  AND mentions specific crime type (murder, POCSO, robbery, etc.)
+  → USE: KA_DistrictDetailedCrimes (has per-district per-crime-type counts)
+
+IF query mentions district but asks for total IPC/SLL summary
+  → USE: KA_DistrictCrimes (simpler district totals)
+
+IF query asks for Karnataka state-level subcategory breakdown
+  (e.g. "murder by motive", "types of robbery", "for gain", "sudden quarrel")
+  → USE: KA_CrimeReview (most granular IPC data)
+
+IF query is about individual incidents, victim age, weapon, case status
+  → USE: FIR_Records (1,500 incident-level records from Karnataka 2025)
+       OR India_CrimeIncidents (40K+ records, all-India 2020-2023)
+
+IF query is about cybercrime motives
+  → USE: CyberCrimeByCity
+
+IF query asks about crimes against women / children / SC-ST
+  → USE: KA_WomenChildCrimes
+
+DATE RULES (MANDATORY):
+  FIR_Records → strftime('%Y', Date) = '2025' (NOT WHERE Year)
+  KA_DistrictCrimes → WHERE year = 2025 (INTEGER column)
+  KA_CrimeReview → WHERE year = 2025 (INTEGER column)
+  CrimeStatistics → WHERE CAST(Year AS INTEGER) = 2025 (TEXT column, corrupted)
+```
+
+---
+
+## Files to Create/Modify
+
+| File | Action | What |
+|---|---|---|
+| `backend/ingest_datasets.py` | **CREATE** | Reads all 10 CSV files, creates + populates all 7 tables |
+| `backend/create_database.py` | **MODIFY** | Call `ingest_datasets.ingest_all()` on startup if tables are empty |
+| `backend/prompts.py` | **MODIFY** | Replace schema section with full table routing rules above |
+| `backend/analytics_agent.py` | **MODIFY** | SQL auto-corrector (Year → strftime), Year integer casting |
+| `backend/routes.py` | **MODIFY** | Add audit_log INSERT at end of every /chat response |
+
+---
+
+## Evaluation Tests After Phase 2
+
+| Query | Expected Table | Expected Answer |
+|---|---|---|
+| "Show Bengaluru murder stats 2025" | `KA_DistrictDetailedCrimes` | Bengaluru City: 176 murder (2024) or specific 2025 count |
+| "Mysuru City cybercrime cases" | `KA_DistrictDetailedCrimes` | Mysuru cyber_crime column value |
+| "What are the types of murder in Karnataka 2025?" | `KA_CrimeReview` | Breakdown: For gain 43, Property dispute 24, etc. |
+| "Total IPC crimes in Tumakuru 2024" | `KA_DistrictCrimes` | District total from district-wise CSV |
+| "Cybercrime fraud cases in Indian cities" | `CyberCrimeByCity` | Fraud column per city |
+| "Crimes against women Karnataka 2025" | `KA_WomenChildCrimes` | Rape 656, Molestation 5840, etc. |
+| "Show me an individual FIR case from Bengaluru" | `FIR_Records` | Actual FIR record from incident table |
+
+---
+
+## Approve to Proceed?

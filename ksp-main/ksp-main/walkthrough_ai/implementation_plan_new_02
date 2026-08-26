@@ -1,0 +1,393 @@
+# KSP Sentinel — Phased Implementation Master Plan
+> Status: Awaiting Phase-by-Phase Approval  
+> Rule: No code written until the phase is explicitly approved.  
+> Rule: Every phase ends with a verification checklist before moving to the next.
+
+---
+
+## Foundation Principle
+
+The 10-minute OAuth token expiry is a constraint we cannot ignore. Every phase is designed so that:
+1. The token auto-refreshes on every API call (already in `config.py`) — we will verify this works.
+2. No phase requires you to manually intervene in Zoho during a demo window.
+3. Workspace setup steps (Zoho side) are listed as a separate, discrete checklist you complete once before any code runs.
+
+---
+
+## ZOHO WORKSPACE — One-Time Setup Checklist
+
+**You do this. I cannot. These are manual console steps.**  
+**Do them in order. Check each before moving on.**
+
+### Step W-1: Verify Knowledge Base Has PDFs (Already Done)
+1. Go to [catalyst.zoho.in](https://catalyst.zoho.in) → Login → Open project **KSPCrimeIntell**
+2. Left sidebar → **QuickML** → **Knowledge Base**
+3. Confirm these are listed: `crime 31` through `crime 42` (should show as 12 documents)
+4. **If missing:** Click **Upload** → select files from `datathon_dataset/pdf_data/crime 31.pdf` through `crime 42.pdf` one by one
+5. ✅ Done when 12 documents appear in Knowledge Base list
+
+### Step W-2: Get the RAG API Endpoint URL
+1. In QuickML → **Knowledge Base** → Click **RAG API** button
+2. Copy the full URL (format: `https://api.catalyst.zoho.in/quickml/v1/project/54626000000013049/rag/answer`)
+3. Note it down — we already have this in `llm.py`. Confirm it matches.
+4. ✅ Done when URL is confirmed
+
+### Step W-3: Get the Zia Translation API URL
+1. In QuickML → **Zia NLP** → **Text Translation**
+2. Look for the API endpoint or "Code" button
+3. Copy the endpoint URL format (format: `https://api.catalyst.zoho.in/quickml/v1/project/{id}/nlp/translate`)
+4. ✅ Done when URL is noted
+
+### Step W-4: Get the Zia TTS API URL
+1. In QuickML → **Zia NLP** → **Text-to-Audio Synthesis**
+2. Copy the endpoint URL
+3. ✅ Done when URL is noted
+
+### Step W-5: Regenerate a Fresh OAuth Token (Do This Before Every Session)
+1. Go to Zoho API Console → **Self Client** → Generate Token
+2. Scope: `QuickML.deployment.READ,QuickML.deployment.CREATE,ZohoCatalyst.mlkit.READ,ZohoCatalyst.mlkit.CREATE,ZohoCatalyst.datastore.READ,ZohoCatalyst.datastore.CREATE,ZohoCatalyst.zcql.EXECUTE,ZohoCatalyst.projects.READ`
+3. Duration: **10 minutes**
+4. Copy the new `access_token`
+5. Open `.env` → replace line 3 value with new token → Save
+6. ✅ Done when `.env` has fresh token
+
+> **After W-1 through W-5 are complete, come back and tell me. We then begin Phase 1.**
+
+---
+
+## PHASE 1 — Memory Agent + Conversation Context
+**Effort:** ~2 hours  
+**Dependency:** None. Purely local Python + JS. No Zoho API calls needed.  
+**Risk:** Very Low.
+
+### What Problem This Solves
+Current: Every chat turn is completely stateless. The LLM has no memory of previous turns. A follow-up question like "what about the same for Mysuru?" fails because the system has already forgotten the first question.
+
+Proposed: 8-turn sliding window with a **Memory Agent** that compresses older context into a compact summary, so the LLM always has relevant history without blowing the context window.
+
+### Memory Agent Design
+
+```
+Turn 1: User asks Q1 → Answer A1 → stored in messages[]
+Turn 2: User asks Q2 → Answer A2 → stored in messages[]
+...
+Turn 8: User asks Q8 → Answer A8 → stored in messages[]
+Turn 9: User asks Q9 →
+  MemoryAgent runs BEFORE the main agent:
+    → Reads turns 1-6 (oldest 6 of 8)
+    → Compresses them into a 3-sentence "Session Summary"
+    → Stores summary as a single system message
+    → Passes: [system: session_summary] + [last 2 full turns] + [Q9]
+    → Main agent proceeds normally
+```
+
+**Why not just truncate to last 8?**  
+Because turns 1-6 might contain the district name, the crime type, or the year filter that makes Q9 intelligible. Pure truncation loses that. The summary preserves the semantic core at a fraction of token cost.
+
+### Module 1A: Backend — Memory Agent
+
+**File to create:** `backend/memory_agent.py`
+
+```
+Logic:
+- Input: full messages[] list (sender, text, timestamp)
+- If len(messages) <= 8: return as-is (no compression needed)
+- If len(messages) > 8:
+    - Take messages[0:-2] (everything except last 2 turns)
+    - Call GLM with a COMPRESSION_PROMPT: "Summarize this conversation in 3 sentences, preserving: the crime categories discussed, districts mentioned, time periods, and any ongoing investigation context."
+    - Return: [{"role": "system", "content": "<MemoryAgent Session Summary: ...>"}] + messages[-2:]
+```
+
+**File to modify:** `backend/routes.py` — call `MemoryAgent.compress(history)` at the start of `/chat` before routing to any agent.
+
+### Module 1B: Frontend — Pass History
+
+**File to modify:** `frontend/src/components/Chatbot.jsx`  
+- Add last 8 messages to POST body as `history[]`
+- Each item: `{ role: "user"|"assistant", content: "..." }`
+
+### Evaluation Metrics for Phase 1
+
+| Metric | How to Test | Pass Criterion |
+|---|---|---|
+| Context retention | Ask "show Bengaluru murder stats 2025", then ask "what about Mysuru?" | Second query correctly queries Mysuru without re-specifying crime type |
+| Memory compression trigger | Have a 9+ turn conversation | Turn 9 should still produce a coherent answer about Turn 1's topic |
+| Latency overhead | Measure /chat response time with and without compression | <400ms overhead for compression call |
+| Token efficiency | Log message length sent to GLM | Compressed history should be <40% of uncompressed 8-turn window |
+
+---
+
+## PHASE 2 — Data Layer Expansion (SQL Schema Fix + New Tables)
+**Effort:** ~3 hours  
+**Dependency:** Phase 1 complete.  
+**Risk:** Low. Additive only — no existing tables are changed.  
+**Zoho Required:** No.
+
+### What Problem This Solves
+- "Show me crime stats for Mysuru City" → **"I couldn't find any data"** — because `FIR_Records` doesn't have 2025 district-level IPC counts. `ka-district-wise-2025.csv` does.
+- "Cybercrime breakdown by motive" → fails — cybercrime motive data exists in `Dataset_CyberCrime_Sean.csv` but is not in SQLite.
+- SQL crashes with `near "I": syntax error` when LLM writes conversational preamble instead of SQL.
+
+### Module 2A: New Tables in crime.db
+
+**File to create:** `backend/ingest_datasets.py`  
+Reads 3 CSVs and inserts into `crime.db`:
+
+```
+TABLE: DistrictCrimes2025
+  district TEXT, ipc_crimes INTEGER, sll_crimes INTEGER, year INTEGER
+
+TABLE: CyberCrimesByCity
+  city TEXT, motive TEXT, cases REAL, year INTEGER
+
+TABLE: audit_log
+  id INTEGER, timestamp TEXT, user_id TEXT, query_text TEXT,
+  agent_type TEXT, sql_generated TEXT, response_ms INTEGER
+```
+
+**Source files:**
+- `datathon_dataset/2025_data/ka-district-wise-2025.csv` → `DistrictCrimes2025`
+- `datathon_dataset/cyber_crime_data/Dataset_CyberCrime_Sean.csv` → `CyberCrimesByCity`
+- `audit_log` created via `CREATE TABLE IF NOT EXISTS`
+
+### Module 2B: TEXT_TO_SQL_PROMPT Rewrite
+
+**File to modify:** `backend/prompts.py`
+
+Updated routing rules for the LLM:
+```
+Rule 1 — District/City queries → DistrictCrimes2025
+  Trigger: any district name (Bengaluru, Mysuru, Hubballi, Mangaluru, Belagavi, Kalaburagi)
+  Example: "show Mysuru City stats 2025" → SELECT * FROM DistrictCrimes2025 WHERE district LIKE '%Mysuru%'
+
+Rule 2 — FIR/Station-level queries → FIR_Records
+  Trigger: "FIR", "police station", "case filed", specific date range
+  Date rule: NEVER use WHERE Year = 2025. ALWAYS use WHERE strftime('%Y', Date) = '2025'
+
+Rule 3 — Category/Subcategory breakdown → CrimeStatistics
+  Trigger: "subcategory", "breakdown by type", statewide with no district
+
+Rule 4 — Cybercrime motive queries → CyberCrimesByCity
+  Trigger: "fraud", "extortion", "cyber motive", city + cybercrime
+
+Rule 5 — Output format: ALWAYS wrap in <sql>...</sql> tags. No exceptions.
+```
+
+### Module 2C: SQL Auto-Correction in analytics_agent.py
+
+**File to modify:** `backend/analytics_agent.py`
+
+Add a post-generation sanitizer:
+```
+- If generated SQL contains "WHERE Year = YYYY" on FIR_Records context → 
+    auto-rewrite to "WHERE strftime('%Y', Date) = 'YYYY'"
+- If generated SQL does not start with SELECT/WITH after tag extraction →
+    log warning, return "SELECT 1" safe fallback (already partially done)
+```
+
+### Module 2D: Audit Logging
+
+**File to modify:** `backend/routes.py`  
+At end of every `/chat` response: `INSERT INTO audit_log VALUES (...)` — captures query, agent_type, sql_generated, response_ms.
+
+### Evaluation Metrics for Phase 2
+
+| Metric | Test Query | Pass Criterion |
+|---|---|---|
+| District routing | "Show crime stats for Mysuru City 2025" | Returns data from DistrictCrimes2025, not empty |
+| FIR date fix | "Show FIRs from January 2025 in Bengaluru" | SQL uses strftime('%Y', Date), no syntax error |
+| Cybercrime routing | "What are the cybercrime motives in Bengaluru?" | Queries CyberCrimesByCity, returns motive breakdown |
+| Audit trail | Check audit_log after 3 queries | 3 rows present with correct agent_type values |
+| SQL hallucination block | Ask a non-SQL question via analytics path | Returns "SELECT 1" fallback, no crash |
+
+---
+
+## PHASE 3 — RAG Layer: Catalyst Knowledge Base Integration
+**Effort:** ~2 hours  
+**Dependency:** Phase 2 complete. Zoho W-1, W-2 complete.  
+**Risk:** Medium — external API call. Has fallback.
+
+### What Problem This Solves
+- `document_agent` currently calls TF-IDF on `rag_store.json` (2 seed documents)
+- Catalyst Knowledge Base has crime 31-42 indexed but is never called
+- Pattern queries miss all PDF content
+
+### Module 3A: Switch DocumentAgent to Catalyst KB
+
+**File to modify:** `backend/routes.py`  
+When `agent_type == 'document_agent'`: call `call_quickml_rag_answer(query)` from `llm.py` (already written, just not used).  
+Fallback: if Catalyst KB returns empty or HTTP error → fall back to TF-IDF `search_rag()`.
+
+### Module 3B: Ingest Remaining 30 PDFs into Local RAG Store
+
+**File to modify:** `backend/rag_engine.py`  
+Add `ingest_datathon_pdf_dataset()`:
+- Scans `datathon_dataset/pdf_data/crime 1.pdf` through `crime 30.pdf`
+- Extracts text via pypdf, chunks at 400 chars with 60-char overlap
+- Appends chunks to `rag_store.json`
+- Called once on backend startup if `rag_store.json` has < 50 chunks
+- crime 31-42 → already in Catalyst KB (don't re-index locally)
+- crime 1-30 → local RAG only (not yet in Catalyst KB)
+
+### Module 3C: PatternAgent RAG Improvement
+
+**File to modify:** `backend/pattern_agent.py`  
+- Dual search: local TF-IDF + Catalyst KB
+- Merge results by relevance score
+- Deduplicate by doc_name
+
+### Evaluation Metrics for Phase 3
+
+| Metric | Test Query | Pass Criterion |
+|---|---|---|
+| Catalyst KB routing | "What does crime 35 say about NDPS?" | Catalyst KB returns passage from crime35 PDF |
+| Local RAG fallback | Disable Catalyst KB (wrong token) | Falls back to rag_store.json, still returns a result |
+| PDF coverage | "What are the theft patterns described in police reports?" | Returns passage citing one of the 42 PDFs |
+| Relevance | Same query to old TF-IDF vs new Catalyst KB | Catalyst KB passage is more semantically relevant |
+| Response time | Measure Catalyst KB call latency | < 4 seconds including GLM synthesis |
+
+---
+
+## PHASE 4 — Kannada Language Pipeline (Zia Translation)
+**Effort:** ~3 hours  
+**Dependency:** Phase 3 complete. Zoho W-3, W-4 complete.  
+**Risk:** Medium — Zia Translation API call.
+
+### What Problem This Solves
+Current: Kannada text in → English query assumed → garbage or empty response.  
+Target: Kannada text in → Zia translates to English → full pipeline runs → Zia translates response back to Kannada.
+
+### Module 4A: translation_service.py
+
+**File to create:** `backend/translation_service.py`
+
+```python
+def detect_language(text: str) -> str:
+    # Heuristic: if text contains Kannada Unicode range (\u0C80-\u0CFF) → return "kn"
+    # Otherwise → return "en"
+
+def translate_kn_to_en(text: str) -> str:
+    # POST to Zia Text Translation API
+    # Source: kn, Target: en
+
+def translate_en_to_kn(text: str) -> str:
+    # POST to Zia Text Translation API
+    # Source: en, Target: kn
+```
+
+### Module 4B: Language Gate in routes.py
+
+**File to modify:** `backend/routes.py`  
+At top of `/chat`:
+```
+detected_lang = detect_language(user_query)
+if detected_lang == "kn":
+    english_query = translate_kn_to_en(user_query)
+else:
+    english_query = user_query
+
+# ... run full pipeline with english_query ...
+
+if detected_lang == "kn":
+    answer = translate_en_to_kn(answer)
+```
+
+### Evaluation Metrics for Phase 4
+
+| Metric | Test | Pass Criterion |
+|---|---|---|
+| Language detection | Send Kannada text | `detected_lang == "kn"` logged |
+| Translation quality | Kannada "ಬೆಂಗಳೂರಿನಲ್ಲಿ 2025 ರ ಅಪರಾಧ ಅಂಕಿಅಂಶ" | Translates to sensible English crime query |
+| Response translation | Run full query in Kannada | Response returned in Kannada script |
+| English unchanged | Send English query | No translation called, same latency as before |
+| Fallback | Zia API down | Returns English response with `[Kannada translation unavailable]` notice |
+
+---
+
+## PHASE 5 — UI Cleanup + Chat Bubble Fix + Analytics Data Card
+**Effort:** ~1.5 hours  
+**Dependency:** Any phase can be done independently.  
+**Risk:** Very Low — purely frontend changes.
+
+### What Problem This Solves
+The chart analysis preview button was injected inside the chat bubble, creating clutter visible in the screenshot (sky-blue highlight). The Data Card is not positioned correctly over the map.
+
+### Module 5A: Remove Inline Chart Button from Chat Bubbles
+
+**File to modify:** `frontend/src/components/Chatbot.jsx`  
+- Remove the `📊 Interactive Chart Analysis & Sec 65B Audit` inline button from inside message `<div>`
+- Analytics chart trigger moves to a separate floating action that appears at the bottom-right corner of the chat drawer when `chart_data` is present
+- Clean text + table formatting only inside message bubbles
+
+### Module 5B: Analytics Data Card Placement
+
+**File to modify:** `frontend/src/components/ChartAnalysisModal.jsx`  
+- Already redesigned as floating glassmorphism overlay in previous session
+- Verify it renders correctly centered on the map view (not inside the drawer)
+- Validate Export PNG and Export PDF buttons work correctly
+
+### Module 5C: Response Formatting Cleanup
+
+**File to modify:** `backend/prompts.py` — `ANALYTICS_SYNTHESIS_PROMPT`  
+- Enforce: all totals must be summed from provided JSON rows
+- Enforce: `<thought>` blocks never appear in final output
+- Enforce: response is clean Markdown table + narrative, no raw JSON leakage
+
+### Evaluation Metrics for Phase 5
+
+| Metric | Test | Pass Criterion |
+|---|---|---|
+| No inline button | Any analytics query | Zero `📊` button inside message bubble |
+| Data Card position | Trigger chart view | Card renders centered over map, not inside drawer |
+| Numerical accuracy | "Compare Bengaluru crime Jan-Mar 2025" | Grand total in response exactly matches sum of returned rows |
+| PDF export | Click Export PDF | Opens downloadable PDF with chart image + narrative |
+| Clean markdown | Any analytics query | No `<thought>` blocks, no raw `{json}` in response |
+
+---
+
+## FULL PHASE SUMMARY TABLE
+
+| Phase | What It Builds | Zoho Required | Code-Only | Estimated Hours | Compliance Jump |
+|---|---|---|---|---|---|
+| **W (Workspace)** | One-time Zoho console setup | ✅ Yes (You do this) | — | 30 mins | Unblocks P3+P4 |
+| **P1** | Memory Agent + conversation context | ❌ No | ✅ Yes | ~2 hrs | Context-aware ❌→✅ |
+| **P2** | New SQLite tables + SQL fixes + audit log | ❌ No | ✅ Yes | ~3 hrs | District queries ❌→✅, Audit ❌→✅ |
+| **P3** | Catalyst KB RAG + 30 PDF ingest | ✅ W-1, W-2 | ✅ Yes | ~2 hrs | Document quality ⚠️→✅ |
+| **P4** | Kannada pipeline via Zia | ✅ W-3, W-4 | ✅ Yes | ~3 hrs | Kannada ❌→✅ |
+| **P5** | UI cleanup + chart fix + response grounding | ❌ No | ✅ Yes | ~1.5 hrs | UI/UX + accuracy |
+
+**Total: ~12 hours of engineering work across 5 phases.**  
+**Compliance: ~35% → ~82% of problem statement requirements.**
+
+---
+
+## Global Evaluation Metrics (Run After All Phases)
+
+| Requirement | Before | Target After |
+|---|---|---|
+| Natural language English queries | ✅ Working | ✅ Maintained |
+| Natural language Kannada queries | ❌ Broken | ✅ Phase 4 |
+| Context-aware conversations | ❌ Stateless | ✅ Phase 1 |
+| District-level crime queries | ❌ "No data found" | ✅ Phase 2 |
+| PDF / document retrieval | ⚠️ TF-IDF only | ✅ Phase 3 |
+| Explainable AI + audit trail | ❌ None | ✅ Phase 2 |
+| Numerical accuracy in responses | ❌ Hallucinating | ✅ Phase 5 |
+| Clean chat UI | ⚠️ Button clutter | ✅ Phase 5 |
+| SQL syntax crashes | ❌ Frequent | ✅ Phase 2 |
+| Memory across 8+ turns | ❌ None | ✅ Phase 1 |
+
+---
+
+## How We Work
+
+1. You confirm which phase to start with.
+2. I document the exact changes (file by file, function by function) for that phase only.
+3. You review and approve.
+4. I write code.
+5. We test using the evaluation metrics for that phase.
+6. We fix any failures before moving to the next phase.
+7. Repeat.
+
+> We begin with **Phase 1 (Memory Agent)** since it requires no Zoho workspace changes and unblocks everything else. But if you want to complete the Workspace setup first, start with **W-1 through W-5** using the checklist above.
+
+**Which do you want to start with?**

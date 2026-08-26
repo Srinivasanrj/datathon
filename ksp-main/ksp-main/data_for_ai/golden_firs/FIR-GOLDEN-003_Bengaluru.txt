@@ -1,0 +1,5 @@
+FIR Number: FIR-2025-BLR-003
+Division: Bengaluru City
+Date: 2025-07-22
+Crime Category: Vehicle Theft
+Narrative: A series of high-end motorcycle thefts reported in HSR Layout. The gang specifically targets Royal Enfield Interceptor 650 motorcycles. CCTV confirms they use programmable OBD-port hacking tools to bypass the immobilizer. These thefts strictly occur between 01:00 AM and 04:00 AM on rainy nights to mask noise and avoid patrols.

@@ -1,0 +1,28 @@
+# Implementation Plan: Chatbot Dynamic Schema Adaptation
+
+As you noted, we are parking the native Catalyst federated database implementation for the future roadmap. However, we must "furnish the chatbot" now so that it is architecturally ready for that BYOD (Bring Your Own Data) change.
+
+Currently, the `AnalyticsAgent` relies on a hardcoded string in `prompts.py` to know what tables exist. If a police department connects an external database later, the chatbot will break because it won't know the new tables.
+
+## Proposed Immediate Changes
+
+We will implement **Dynamic Schema Extraction** against our current local SQLite database (`crime.db`). This ensures the chatbot's code is adaptable and ready to read external schemas later.
+
+### 1. Refactor `AnalyticsAgent.py`
+*   Add a helper function `_get_live_schema()` that runs `PRAGMA table_info(table_name)` on the database at runtime.
+*   Instead of injecting a hardcoded string, it will dynamically construct the schema context (e.g., extracting columns, types, and table names) and pass it to the LLM.
+
+### 2. Update `prompts.py`
+*   Remove the hardcoded `CrimeStatistics` table definition from `TEXT_TO_SQL_PROMPT`.
+*   Replace it with a dynamic `{live_schema_context}` placeholder.
+
+### 3. Expand the Local Dataset (Optional but Recommended)
+*   Since the current schema (`CrimeStatistics`) lacks dynamic columns (like `District`), we should run a quick script to ingest our synthetic tabular data into a new local `FIR_Records` table. This provides immediate proof that the dynamic schema extractor works and allows us to answer complex queries now, while keeping the architecture decoupled for the future.
+
+---
+
+## User Review Required
+> [!IMPORTANT]
+> Please review this adaptation plan. By replacing hardcoded prompts with live SQL schema extraction, we guarantee the chatbot is future-proofed for the Catalyst BYOD integrations. 
+> 
+> If you approve, I will refactor the `AnalyticsAgent` and prepare the local database.

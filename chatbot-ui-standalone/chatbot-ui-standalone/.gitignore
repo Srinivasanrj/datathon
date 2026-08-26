@@ -1,0 +1,14 @@
+# Environment variables (CRITICAL: NEVER COMMIT CREDENTIALS)
+.env
+.env.local
+.env.*.local
+
+# Dependencies
+node_modules/
+
+# Production build
+dist/
+
+# Logs
+*.log
+npm-debug.log*

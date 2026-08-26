@@ -1,0 +1,66 @@
+# Implementation Plan: Local Semantic RAG (With Cloud Migration Architecture)
+
+## User Review Required
+
+> [!CAUTION]
+> **Awaiting Approval**
+> This updated plan incorporates your requirement for an easy migration path to Zoho Catalyst. We will build a pluggable RAG architecture. Please review the plan below and click **Proceed** when ready.
+
+---
+
+## 1. Goal Description
+We will replace the legacy TF-IDF keyword-matching algorithm with a true **Semantic Embedding Pipeline**. 
+
+However, per your instructions, this must not be a hardcoded local implementation. We will build a **Pluggable Interface (Strategy Pattern)**. This means our backend will have a switch. When we run locally, it uses our custom Vector Search. When you are ready to migrate to Zoho Catalyst, we simply flip an environment variable flag, and the exact same code seamlessly switches to calling the Zoho Cloud APIs without rewriting the core backend.
+
+## 2. Proposed Architecture
+
+### A. The Pluggable RAG Interface
+We will design `rag_engine.py` to support multiple backends behind a unified function: `get_relevant_passages(query)`.
+- **Local Engine (Phase 3.1):** Uses `sentence-transformers` (`all-MiniLM-L6-v2`) and local `numpy` arrays for semantic vector search. Extremely fast, local, and zero API costs.
+- **Zoho Catalyst Engine (Phase 3.2 - Future):** A pre-built routing path that sends the query to the Zoho Catalyst QuickML endpoint when you have your Cloud Knowledge Base ready.
+
+### B. The Local Vector Store
+To build the local side, we will use:
+1. `sentence-transformers`: A highly accurate, lightweight (~80MB) open-source embedding model.
+2. `numpy`: For ultra-fast Cosine Similarity math against the 12,000 PDF chunks.
+
+---
+
+## 3. Proposed Changes
+
+### `backend/.env`
+#### [MODIFY] `.env`
+Add a feature flag:
+`RAG_PROVIDER=local` # Can be switched to 'catalyst' later.
+
+### `backend/requirements.txt`
+#### [MODIFY] `requirements.txt`
+Add the necessary local ML dependencies:
+- `sentence-transformers`
+- `numpy`
+
+### `backend/rag_engine.py`
+#### [MODIFY] `rag_engine.py`
+1. **Remove TF-IDF**: Delete the legacy keyword-counting logic.
+2. **Implement `LocalVectorStore`**: 
+   - A class that uses `sentence-transformers` to embed text.
+   - Saves vectors to `rag_vectors.npy`.
+   - Performs cosine similarity math to find top 4 chunks.
+3. **Implement `search_rag` (The Router)**:
+   - Check the `RAG_PROVIDER` environment variable.
+   - If `local`, query the `LocalVectorStore`.
+   - If `catalyst`, route the query to your Zoho Catalyst REST API.
+
+---
+
+## 4. Verification Plan
+
+### Automated Re-Ingestion
+Once the code is written, I will automatically re-run `ingest_pdfs.py` to generate the mathematical vectors for your 42 PDFs.
+
+### Manual Verification
+1. You will ask: **"What is the standard procedure for cyber crimes?"**
+2. The UI will trigger the Document Agent.
+3. Our new Semantic RAG engine will perfectly understand the meaning, retrieve the exact procedural guidelines, and generate the correct answer.
+4. When you eventually set up the Zoho Catalyst Knowledge base, we will simply change `RAG_PROVIDER=catalyst` in `.env` and verify it routes seamlessly to the cloud!

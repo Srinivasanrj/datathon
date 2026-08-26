@@ -1,0 +1,1 @@
+{ "CATALYST-ORG": "60077159195", "Authorization": "Zoho-oauthtoken <access-token>" } : Headers. { "query": "<message>", "documents": "<array-of-document-ids>" }: request body. POST:HTTP method.  https://console.catalyst.zoho.in/quickml/v1/project/54626000000013049/rag/answer : endpoint url. authentication: OAuth.

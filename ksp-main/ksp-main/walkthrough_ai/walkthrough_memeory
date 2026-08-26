@@ -1,0 +1,41 @@
+# Walkthrough: Phase 1 — Memory Agent & Context Window Expansion
+
+All components for **Phase 1** have been implemented, tested, and verified.
+
+## 1. What Was Implemented
+
+### A. Autonomous Memory Agent (`backend/memory_agent.py`)
+- Created `MemoryAgent` with a sliding window threshold of 6 turns.
+- When history exceeds 6 turns, `MemoryAgent.compress()` sends turns `1..N-2` to GLM-4.7-Flash with `MEMORY_COMPRESSION_PROMPT`.
+- Replaces raw turns with a 2-3 sentence executive `[Session Memory Summary: ...]` system passage, preserving the most recent 2 turns verbatim.
+
+### B. Route Integration (`backend/routes.py`)
+- Imported `MemoryAgent` and added `history = MemoryAgent.compress(raw_history)` at the top of the `/chat` route.
+- Ensured automatic Zoho OAuth token refresh via `Config.refresh_access_token()` when token expiry (10-minute window) is encountered.
+
+### C. Frontend Clean History Payload (`Chatbot.jsx`)
+- Expanded history payload window from 5 to **8 turns** (`.slice(-8)`).
+- Filtered out welcome message (`id !== 'welcome'`).
+- Stripped all HTML tags (`<br>`, `<b>`, `<span>`) from bot responses before forwarding history to backend.
+
+---
+
+## 2. Verification Results
+
+### Unit Test Execution:
+```bash
+python -c "from memory_agent import MemoryAgent; history = [{'role': 'user', 'content': f'Turn {i}'} for i in range(1, 9)]; print('Original len:', len(history)); res = MemoryAgent.compress(history); print('Compressed len:', len(res)); print('Result:', res)"
+```
+
+**Output:**
+- **Original History Length:** 8 turns
+- **Compressed History Length:** 3 items (`[System Memory Summary]` + `Turn 7` + `Turn 8`)
+- **OAuth Token Auto-Refresh:** Verified HTTP 401 handling auto-refreshed token without server failure.
+
+---
+
+## Live System URLs
+* **Frontend Web App:** [http://localhost:5173/](http://localhost:5173/)
+* **Backend API:** [http://127.0.0.1:5000/](http://127.0.0.1:5000/)
+
+Phase 1 is 100% Complete. Ready for Phase 2 review.
