@@ -9,9 +9,9 @@ dotenv.config();
 
 const CATALYST_CLIENT_ID     = process.env.CATALYST_CLIENT_ID;
 const CATALYST_CLIENT_SECRET = process.env.CATALYST_CLIENT_SECRET;
-const CATALYST_REFRESH_TOKEN = process.env.CATALYST_QUICKML_REFRESH_TOKEN || process.env.CATALYST_REFRESH_TOKEN || '1000.bc1979065adc3aa90a6595e132e2afa9.0ac730c66c0267f2b002a28ee1e587dc';
-const CATALYST_PROJECT_ID    = process.env.CATALYST_PROJECT_ID || '54626000000013049';
-const CATALYST_ORG_ID        = process.env.CATALYST_ORG_ID || '60077159195';
+const CATALYST_REFRESH_TOKEN = process.env.CATALYST_QUICKML_REFRESH_TOKEN || process.env.CATALYST_REFRESH_TOKEN;
+const CATALYST_PROJECT_ID    = process.env.CATALYST_PROJECT_ID;
+const CATALYST_ORG_ID        = process.env.CATALYST_ORG_ID;
 
 const ZOHO_TOKEN_URL = 'https://accounts.zoho.in/oauth/v2/token';
 const GLM_CHAT_URL   = `https://api.catalyst.zoho.in/quickml/v1/project/${CATALYST_PROJECT_ID}/glm/chat`;
