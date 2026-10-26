@@ -7,13 +7,6 @@
 
 ---
 
-## 📸 Screenshots
-
-<!-- Add the chatbot, the chart modal and one portal screen here. -->
-_Coming soon._
-
----
-
 ## ✨ What's in this build
 
 ### 🤖 Chat backend (Node.js + Express)
@@ -114,9 +107,7 @@ node server/test_guardrails.js
 
 Built as a team for the **KSP Datathon 2026** finals.
 
-**My contribution:** [Fill in what you personally built, e.g. "Built the guardrail service and scenario tests, and the document RAG pipeline."]
-
-**Teammates:** [Name — role], [Name — role]
+<!-- TODO: add **My contribution:** ... (e.g. "Built the guardrail service and scenario tests, and the document RAG pipeline.") and **Teammates:** Name — role. Add a Screenshots section near the top too. -->
 
 ---
 
